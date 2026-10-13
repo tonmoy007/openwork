@@ -356,3 +356,24 @@ test("constraints persist in order", async () => {
     store.close()
   }
 })
+
+test("members list in join order", async () => {
+  const store = await openStore(":memory:")
+  try {
+    const project = store.createProject({
+      name: "Welfare Grant",
+      template_ref: "sps-ecrs-v1@1.0",
+      knowledge_category: "service-evidence",
+    })
+    assert.deepEqual(store.listMembers(project.id), [])
+    store.addMember({ project_id: project.id, user_ref: "sara", local_role: "researcher" })
+    store.addMember({ project_id: project.id, user_ref: "lee", local_role: "reviewer" })
+    const members = store.listMembers(project.id)
+    assert.deepEqual(
+      members.map((member) => [member.user_ref, member.local_role]),
+      [["sara", "researcher"], ["lee", "reviewer"]],
+    )
+  } finally {
+    store.close()
+  }
+})

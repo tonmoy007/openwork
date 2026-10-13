@@ -4,6 +4,7 @@ import { evaluateConfirmGate } from "@openwork/process-model/gates";
 import { draftProcessModel } from "@openwork/process-model/draft";
 import { checkModelIntegrity, processModelSchema } from "@openwork/process-model/model";
 import { authorStep, decideStep, proposeAll, stepsMissingDecision } from "@openwork/process-model/propose";
+import { buildTobeVariant, tobeVariantSchema } from "@openwork/process-model/tobe";
 import { extractClaims } from "@openwork/research-templates/claims";
 import { evaluateEvidenceGate } from "@openwork/research-templates/gates";
 import { openStore, type LocalStore } from "@openwork/research-templates/adapters/local-sqlite";
@@ -481,5 +482,75 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
     });
     audit(store, ctx.params.id, ctx.actor?.clientId, "simplify.decided", [snapshot.id, ctx.params.stepId], `${state}: ${ctx.params.stepId}`);
     return jsonResponse({ model, undecided: stepsMissingDecision(model) }, 201);
+  });
+
+  function readTobe(store: LocalStore, project_id: string) {
+    const snapshot = store.latestSnapshot(project_id, "to_be");
+    if (!snapshot) return null;
+    const parsed = tobeVariantSchema.safeParse(JSON.parse(snapshot.model_json));
+    if (!parsed.success) {
+      throw new ApiError(500, "corrupt_variant", "Stored to-be variant failed validation", {});
+    }
+    return { snapshot, variant: parsed.data };
+  }
+
+  addRoute(routes, "POST", "/research/projects/:id/tobe/build", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    const processing = readProcessing(store, ctx.params.id);
+    if (!processing) {
+      throw new ApiError(422, "no_decisions", "Decide every simplification before building to-be", {});
+    }
+    const undecided = stepsMissingDecision(processing.model);
+    if (undecided.length > 0) {
+      throw new ApiError(422, "decisions_incomplete", "Decide every step before building to-be", { undecided });
+    }
+    const variant = buildTobeVariant(processing.model, "v1", "Proposed to-be");
+    const previous = store.latestSnapshot(ctx.params.id, "to_be");
+    const snapshot = store.saveSnapshot({
+      project_id: ctx.params.id,
+      stage: "to_be",
+      model_json: JSON.stringify(variant),
+      supersedes: previous?.id ?? null,
+    });
+    audit(store, ctx.params.id, ctx.actor?.clientId, "tobe.built", [snapshot.id], `${variant.steps.length} steps in v1`);
+    return jsonResponse({ variant, snapshot_id: snapshot.id }, 201);
+  });
+
+  addRoute(routes, "GET", "/research/projects/:id/tobe", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    const found = readTobe(store, ctx.params.id);
+    if (!found) return jsonResponse({ variant: null });
+    return jsonResponse({ variant: found.variant });
+  });
+
+  addRoute(routes, "POST", "/research/projects/:id/tobe/approve", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    const found = readTobe(store, ctx.params.id);
+    if (!found) {
+      throw new ApiError(422, "no_variant", "Build the to-be variant before approving", {});
+    }
+    const actor = ctx.actor?.clientId ?? "local";
+    const members = store.listMembers(ctx.params.id);
+    const role = members.find((member) => member.user_ref === actor)?.local_role;
+    const solo = members.length <= 1;
+    if (role !== "reviewer" && !solo) {
+      throw new ApiError(403, "reviewer_only", "Only a reviewer can approve the to-be process", {});
+    }
+    store.setProjectPhase(ctx.params.id, "approved");
+    audit(
+      store,
+      ctx.params.id,
+      actor,
+      "tobe.approved",
+      [found.snapshot.id],
+      solo && role !== "reviewer" ? "solo researcher approval" : "reviewer approval",
+    );
+    return jsonResponse({ variant: found.variant, phase: "approved" });
   });
 }

@@ -53,6 +53,14 @@
       "development": "./src/propose.ts",
       "default": "./src/propose.ts"
     },
+    "./tobe": {
+      "types": {
+        "openwork-build": "./dist/types/src/tobe.d.ts",
+        "default": "./src/tobe.ts"
+      },
+      "development": "./src/tobe.ts",
+      "default": "./src/tobe.ts"
+    },
     "./cost": {
       "types": {
         "openwork-build": "./dist/types/src/cost.d.ts",

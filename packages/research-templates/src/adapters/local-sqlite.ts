@@ -335,6 +335,7 @@ export interface LocalStore {
     knowledge_category: string
   }): ResearchProject
   addMember(member: ProjectMember): ProjectMember
+  listMembers(project_id: string): ProjectMember[]
   saveEvidence(
     file: Omit<EvidenceFile, "claims"> & { claims?: EvidenceFile["claims"] },
   ): EvidenceFile
@@ -637,6 +638,25 @@ function buildStore(db: SqlDriver): LocalStore {
         "INSERT INTO project_members (project_id, user_ref, local_role) VALUES (?, ?, ?) ON CONFLICT(project_id, user_ref) DO UPDATE SET local_role = excluded.local_role",
       ).run(member.project_id, member.user_ref, member.local_role)
       return member
+    },
+    listMembers(project_id) {
+      return db
+        .prepare(
+          "SELECT project_id, user_ref, local_role FROM project_members WHERE project_id = ? ORDER BY rowid",
+        )
+        .all(project_id)
+        .map(
+          (row): ProjectMember => ({
+            project_id: textColumn(row, "project_id"),
+            user_ref: textColumn(row, "user_ref"),
+            local_role:
+              textColumn(row, "local_role") === "author"
+                ? "author"
+                : textColumn(row, "local_role") === "reviewer"
+                  ? "reviewer"
+                  : "researcher",
+          }),
+        )
     },
     saveEvidence(file) {
       const record: EvidenceFile = { claims: [], ...file }

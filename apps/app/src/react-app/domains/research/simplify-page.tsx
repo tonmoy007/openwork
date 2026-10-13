@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { projectCosts } from "@openwork/process-model/cost";
 import { useBootState } from "@/react-app/shell/boot-state";
-import { researchAsisRoute } from "./research-routes";
+import { researchAsisRoute, researchTobeRoute } from "./research-routes";
 import { useResearchClient } from "./use-research-client";
 
 const CRITERIA = [
@@ -411,8 +411,13 @@ export function ResearchSimplifyPage() {
       {model && undecided.length === 0 ? (
         <Alert className="mb-4">
           <AlertTitle>All steps decided</AlertTitle>
-          <AlertDescription>
-            Every proposal has a verdict with reasons on file. Cost projection and the to-be workspace arrive next.
+          <AlertDescription className="flex flex-col gap-3">
+            <span>Every proposal has a verdict with reasons on file.</span>
+            <span>
+              <Button size="sm" onClick={() => navigate(researchTobeRoute(projectId))}>
+                Open to-be process
+              </Button>
+            </span>
           </AlertDescription>
         </Alert>
       ) : null}

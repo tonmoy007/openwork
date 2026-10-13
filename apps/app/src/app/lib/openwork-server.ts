@@ -493,6 +493,23 @@ export const projectConstraintSchema = z.object({
 });
 export type ProjectConstraint = z.infer<typeof projectConstraintSchema>;
 
+export const tobeStepSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  detail: z.string(),
+  actor: z.string(),
+  origin: z.enum(["kept", "changed"]),
+  source_step_ids: z.array(z.string()),
+});
+
+export const tobeVariantSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  steps: z.array(tobeStepSchema),
+  source_decisions: z.array(z.string()),
+});
+export type TobeVariant = z.infer<typeof tobeVariantSchema>;
+
 export type OpenworkSessionMessage = {
   info: Message;
   parts: Part[];
@@ -1923,6 +1940,18 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
     decideSimplification: async (projectId: string, stepId: string, payload: { state: string; proposal?: string; reason?: string; criterion_id?: string; action?: string; claim_ids?: string[] }): Promise<{ model: ProcessingModel; undecided: string[] }> => {
       const body = await requestJson<{ model: unknown; undecided: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/processing/steps/${encodeURIComponent(stepId)}/decide`, { token, method: "POST", body: payload, timeoutMs: timeouts.activateWorkspace });
       return { model: processingModelSchema.parse(body.model), undecided: z.array(z.string()).parse(body.undecided) };
+    },
+    buildTobe: async (projectId: string): Promise<{ variant: TobeVariant }> => {
+      const body = await requestJson<{ variant: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/tobe/build`, { token, method: "POST", body: {}, timeoutMs: timeouts.activateWorkspace });
+      return { variant: tobeVariantSchema.parse(body.variant) };
+    },
+    getTobe: async (projectId: string): Promise<{ variant: TobeVariant | null }> => {
+      const body = await requestJson<{ variant: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/tobe`, { token, timeoutMs: timeouts.listWorkspaces });
+      return { variant: body.variant === null ? null : tobeVariantSchema.parse(body.variant) };
+    },
+    approveTobe: async (projectId: string): Promise<{ variant: TobeVariant; phase: string }> => {
+      const body = await requestJson<{ variant: unknown; phase: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/tobe/approve`, { token, method: "POST", body: {}, timeoutMs: timeouts.activateWorkspace });
+      return { variant: tobeVariantSchema.parse(body.variant), phase: z.string().parse(body.phase) };
     },
     createLocalWorkspace: (payload: { folderPath: string; name: string; preset: string }) =>
       requestJson<WorkspaceList>(baseUrl, "/workspaces/local", {

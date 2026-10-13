@@ -19,3 +19,7 @@ export function researchAsisRoute(projectId: string) {
 export function researchSimplifyRoute(projectId: string) {
   return `/research/${encodeURIComponent(projectId)}/simplify`;
 }
+
+export function researchTobeRoute(projectId: string) {
+  return `/research/${encodeURIComponent(projectId)}/tobe`;
+}
