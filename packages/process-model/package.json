@@ -52,6 +52,14 @@
       },
       "development": "./src/propose.ts",
       "default": "./src/propose.ts"
+    },
+    "./cost": {
+      "types": {
+        "openwork-build": "./dist/types/src/cost.d.ts",
+        "default": "./src/cost.ts"
+      },
+      "development": "./src/cost.ts",
+      "default": "./src/cost.ts"
     }
   },
   "scripts": {

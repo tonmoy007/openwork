@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { projectCosts } from "@openwork/process-model/cost";
 import { useBootState } from "@/react-app/shell/boot-state";
 import { researchAsisRoute } from "./research-routes";
 import { useResearchClient } from "./use-research-client";
@@ -117,6 +118,22 @@ export function ResearchSimplifyPage() {
 
   const { model, undecided, constraints } = processing.data;
   const decidedCount = (model?.steps.length ?? 0) - undecided.length;
+
+  const impacts = model
+    ? projectCosts(
+        model.steps,
+        new Set(
+          model.steps
+            .filter(
+              (step) =>
+                step.simplification?.state === "accepted" &&
+                step.simplification.action === "eliminate",
+            )
+            .map((step) => step.id),
+        ),
+        model.steps.map((step) => step.id),
+      )
+    : [];
 
   return (
     <div className="mx-auto w-full max-w-4xl p-6">
@@ -355,6 +372,32 @@ export function ResearchSimplifyPage() {
           </CardContent>
         </Card>
       )}
+
+      {model ? (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Projected impact</CardTitle>
+            <CardDescription>
+              Recalculated on every decision from accepted eliminations.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {impacts.map((impact) => (
+                <div key={impact.measure} className="rounded-md border px-3 py-2 text-center">
+                  <p className="text-lg font-bold">
+                    {impact.pct === null ? "—" : `${Math.round(impact.pct)}% less`}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{impact.measure.replaceAll("_", " ")}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {impact.before} → {impact.after}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className="mb-4">
         <CardHeader>
