@@ -226,9 +226,10 @@ async function startManagedOpencodeServer(
         reject(error);
       };
       const lines = createEngineStartupLineReader((line) => {
-        if (!line.startsWith("opencode server listening")) return;
-        const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
-        if (!match?.[1]) return fail(new Error(`Failed to parse OpenCode server URL from: ${line}\n${output()}`));
+        // Match the v2 module: the banner reads "server listening on <url>"
+        // with or without the "opencode" prefix depending on the sidecar.
+        const match = line.match(/server listening on (https?:\/\/[^\s]+)/);
+        if (!match?.[1]) return;
         done(match[1]);
       });
       const timeout = setTimeout(() => fail(new Error(`Timeout waiting for OpenCode server after ${options.timeoutMs ?? 15000}ms\n${output()}`)), options.timeoutMs ?? 15000);
