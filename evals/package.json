@@ -29,6 +29,7 @@
     "@openwork/matchers": "workspace:*",
     "@openwork/review": "link:../packages/review",
     "@openwork/research-templates": "link:../packages/research-templates",
+    "@openwork/process-model": "link:../packages/process-model",
     "@openwork/sdk": "link:../packages/sdk",
     "@openwork/design-review": "workspace:*",
     "@openwork/test-artifacts": "workspace:*",

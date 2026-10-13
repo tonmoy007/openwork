@@ -1,0 +1,54 @@
+{
+  "name": "@openwork/process-model",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ProcessModel: the single source of truth for as-is/simplified/to-be processes. Table, BPMN, and exports render from it.",
+  "exports": {
+    ".": {
+      "types": {
+        "openwork-build": "./dist/types/src/index.d.ts",
+        "default": "./src/index.ts"
+      },
+      "development": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./model": {
+      "types": {
+        "openwork-build": "./dist/types/src/model.d.ts",
+        "default": "./src/model.ts"
+      },
+      "development": "./src/model.ts",
+      "default": "./src/model.ts"
+    },
+    "./draft": {
+      "types": {
+        "openwork-build": "./dist/types/src/draft.d.ts",
+        "default": "./src/draft.ts"
+      },
+      "development": "./src/draft.ts",
+      "default": "./src/draft.ts"
+    },
+    "./rows": {
+      "types": {
+        "openwork-build": "./dist/types/src/rows.d.ts",
+        "default": "./src/rows.ts"
+      },
+      "development": "./src/rows.ts",
+      "default": "./src/rows.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "node --test src/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@openwork/research-templates": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.3"
+  }
+}
