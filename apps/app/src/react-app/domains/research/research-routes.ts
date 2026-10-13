@@ -11,3 +11,11 @@ export function researchNewProjectRoute() {
 export function researchEvidenceRoute(projectId: string) {
   return `/research/${encodeURIComponent(projectId)}/evidence`;
 }
+
+export function researchAsisRoute(projectId: string) {
+  return `/research/${encodeURIComponent(projectId)}/asis`;
+}
+
+export function researchSimplifyRoute(projectId: string) {
+  return `/research/${encodeURIComponent(projectId)}/simplify`;
+}

@@ -207,6 +207,14 @@ CREATE TABLE IF NOT EXISTS audit_events (
   detail TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS constraints (
+  constraint_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  statement TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  claim_ids_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
 `
 
 function now(): string {
@@ -301,12 +309,23 @@ function processStage(value: string): ProcessStage {
   return value
 }
 
+export interface ProjectConstraint {
+  constraint_id: string
+  project_id: string
+  statement: string
+  reason: string
+  claim_ids: string[]
+  created_at: string
+}
+
 export interface LocalStore {
   templates: TemplateStore
   access: AccessControl
   runner: InferenceRunner
   audit: AuditSink
   listProjects(): ResearchProject[]
+  getProject(id: string): ResearchProject | null
+  setProjectPhase(id: string, phase: string): void
   createProject(input: {
     name: string
     description?: string
@@ -327,6 +346,14 @@ export interface LocalStore {
     supersedes?: string | null
   }): ProcessSnapshot
   listSnapshots(project_id: string): ProcessSnapshot[]
+  latestSnapshot(project_id: string, stage: ProcessSnapshot["stage"]): ProcessSnapshot | null
+  saveConstraint(input: {
+    project_id: string
+    statement: string
+    reason: string
+    claim_ids: string[]
+  }): ProjectConstraint
+  listConstraints(project_id: string): ProjectConstraint[]
   close(): void
 }
 
@@ -354,7 +381,19 @@ function buildStore(db: SqlDriver): LocalStore {
     return { id: result.template.id, version: result.template.version }
   }
 
-  function readTemplateVersion(row: SqlRow): StoredTemplateVersion {
+  function readSnapshot(row: SqlRow | undefined | null): ProcessSnapshot | null {
+    if (row === undefined || row === null) return null
+    return {
+      id: textColumn(row, "id"),
+      project_id: textColumn(row, "project_id"),
+      stage: processStage(textColumn(row, "stage")),
+      model_json: textColumn(row, "model_json"),
+      supersedes: optionalTextColumn(row, "supersedes"),
+      created_at: textColumn(row, "created_at"),
+    }
+  }
+  function readTemplateVersion(row: SqlRow | undefined | null): StoredTemplateVersion | null {
+    if (row === undefined || row === null) return null
     return {
       template_id: textColumn(row, "template_id"),
       version: textColumn(row, "version"),
@@ -378,7 +417,7 @@ function buildStore(db: SqlDriver): LocalStore {
                 "SELECT template_id, version, doc_json, doc_hash, created_at FROM template_versions WHERE template_id = ? AND version = ?",
               )
               .get(id, version)
-      return row === undefined ? null : readTemplateVersion(row)
+      return readTemplateVersion(row)
     },
     listLocal() {
       return db
@@ -519,6 +558,33 @@ function buildStore(db: SqlDriver): LocalStore {
     access,
     runner,
     audit,
+    getProject(id) {
+      const row = db
+        .prepare(
+          "SELECT id, name, description, country, institution, template_ref, knowledge_category, phase, created_at FROM projects WHERE id = ?",
+        )
+        .get(id)
+      if (row === undefined || row === null) return null
+      return {
+        id: textColumn(row, "id"),
+        name: textColumn(row, "name"),
+        description: textColumn(row, "description"),
+        country: textColumn(row, "country"),
+        institution: textColumn(row, "institution"),
+        template_ref: textColumn(row, "template_ref"),
+        knowledge_category: textColumn(row, "knowledge_category"),
+        phase: textColumn(row, "phase"),
+        created_at: textColumn(row, "created_at"),
+      }
+    },
+    setProjectPhase(id, phase) {
+      const result = db
+        .prepare("UPDATE projects SET phase = ? WHERE id = ?")
+        .run(phase, id)
+      if (result.changes === 0) {
+        throw new StoreError(NOT_FOUND, `project ${id} not found`)
+      }
+    },
     listProjects() {
       return db
         .prepare(
@@ -643,8 +709,54 @@ function buildStore(db: SqlDriver): LocalStore {
           }),
         )
     },
+    latestSnapshot(project_id, stage) {
+      const row = db
+        .prepare(
+          "SELECT id, project_id, stage, model_json, supersedes, created_at FROM process_models WHERE project_id = ? AND stage = ? ORDER BY rowid DESC LIMIT 1",
+        )
+        .get(project_id, stage)
+      return readSnapshot(row)
+    },
     close() {
       db.close()
+    },
+    saveConstraint(input) {
+      const record: ProjectConstraint = {
+        constraint_id: randomUUID(),
+        project_id: input.project_id,
+        statement: input.statement,
+        reason: input.reason,
+        claim_ids: input.claim_ids,
+        created_at: now(),
+      }
+      db.prepare(
+        "INSERT INTO constraints (constraint_id, project_id, statement, reason, claim_ids_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(
+        record.constraint_id,
+        record.project_id,
+        record.statement,
+        record.reason,
+        JSON.stringify(record.claim_ids),
+        record.created_at,
+      )
+      return record
+    },
+    listConstraints(project_id) {
+      return db
+        .prepare(
+          "SELECT constraint_id, project_id, statement, reason, claim_ids_json, created_at FROM constraints WHERE project_id = ? ORDER BY rowid",
+        )
+        .all(project_id)
+        .map(
+          (row): ProjectConstraint => ({
+            constraint_id: textColumn(row, "constraint_id"),
+            project_id: textColumn(row, "project_id"),
+            statement: textColumn(row, "statement"),
+            reason: textColumn(row, "reason"),
+            claim_ids: stringListColumn(row, "claim_ids_json"),
+            created_at: textColumn(row, "created_at"),
+          }),
+        )
     },
   }
 }

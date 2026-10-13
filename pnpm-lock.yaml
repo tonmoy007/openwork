@@ -176,6 +176,9 @@ importers:
       '@openwork/install-config':
         specifier: workspace:*
         version: link:../../packages/install-config
+      '@openwork/process-model':
+        specifier: workspace:*
+        version: link:../../packages/process-model
       '@openwork/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -464,6 +467,9 @@ importers:
       '@openwork/free-auto':
         specifier: workspace:*
         version: link:../../packages/free-auto
+      '@openwork/process-model':
+        specifier: workspace:*
+        version: link:../../packages/process-model
       '@openwork/research-templates':
         specifier: workspace:*
         version: link:../../packages/research-templates

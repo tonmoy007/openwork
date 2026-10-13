@@ -20,7 +20,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useBootState } from "@/react-app/shell/boot-state";
-import { researchPortfolioRoute } from "./research-routes";
+import { researchAsisRoute, researchPortfolioRoute } from "./research-routes";
 import { useResearchClient } from "./use-research-client";
 
 const EVIDENCE_TYPES = ["sop", "law", "form", "interview", "bpmn"];
@@ -222,8 +222,13 @@ export function ResearchEvidencePage() {
       {gate.ready ? (
         <Alert>
           <AlertTitle>Evidence ready</AlertTitle>
-          <AlertDescription>
-            {gate.reasons[0]} The as-is workspace arrives in the next slice — nothing to start yet.
+          <AlertDescription className="flex flex-col gap-3">
+            <span>{gate.reasons[0]}</span>
+            <span>
+              <Button size="sm" onClick={() => navigate(researchAsisRoute(projectId))}>
+                Open as-is workspace
+              </Button>
+            </span>
           </AlertDescription>
         </Alert>
       ) : (

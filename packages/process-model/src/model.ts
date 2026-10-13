@@ -8,6 +8,25 @@ import { z } from "zod"
 
 export const PROCESS_STAGES = ["as_is", "processing", "to_be"] as const
 
+const painSchema = z.object({
+  pain_id: z.string().min(1),
+  dimension: z.string().min(1),
+  finding: z.string().min(1),
+  severity: z.enum(["low", "medium", "high"]),
+  claim_ids: z.array(z.string().min(1)),
+})
+
+const simplificationSchema = z.object({
+  criterion_id: z.string().min(1),
+  action: z.string().min(1),
+  proposal: z.string().min(1),
+  reason: z.string().min(1),
+  claim_ids: z.array(z.string().min(1)),
+  state: z.enum(["proposed", "accepted", "rejected", "revised"]),
+  revised_from: z.string().nullable().default(null),
+  decided_by: z.string().nullable().default(null),
+})
+
 const stepSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -17,6 +36,9 @@ const stepSchema = z.object({
   cost: z.string().nullable(),
   visits: z.string().nullable(),
   claim_ids: z.array(z.string().min(1)).min(1),
+  pains: z.array(painSchema).default([]),
+  no_pain_reason: z.string().nullable().default(null),
+  simplification: simplificationSchema.nullable().default(null),
 })
 
 const laneSchema = z.object({
@@ -44,6 +66,8 @@ export const processModelSchema = z.object({
 
 export type ProcessModel = z.infer<typeof processModelSchema>
 export type ProcessStep = ProcessModel["steps"][number]
+export type StepPain = ProcessStep["pains"][number]
+export type StepSimplification = NonNullable<ProcessStep["simplification"]>
 
 export interface ModelIssue {
   path: string
@@ -87,4 +111,15 @@ export function checkModelIntegrity(model: ProcessModel): ModelIssue[] {
 /** G1 entry rule: every step carries at least one claim (schema already enforces non-empty). */
 export function stepsHaveClaims(model: ProcessModel): string[] {
   return model.steps.filter((step) => step.claim_ids.length === 0).map((step) => step.id)
+}
+
+/** G1 confirm rule: every step has an actor and a pain or an explicit no-pain reason. */
+export function stepsMissingResolution(model: ProcessModel): string[] {
+  return model.steps
+    .filter(
+      (step) =>
+        step.actor.trim().length === 0 ||
+        (step.pains.length === 0 && (step.no_pain_reason ?? "").trim().length === 0),
+    )
+    .map((step) => step.id)
 }

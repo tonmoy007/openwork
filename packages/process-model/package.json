@@ -36,6 +36,22 @@
       },
       "development": "./src/rows.ts",
       "default": "./src/rows.ts"
+    },
+    "./gates": {
+      "types": {
+        "openwork-build": "./dist/types/src/gates.d.ts",
+        "default": "./src/gates.ts"
+      },
+      "development": "./src/gates.ts",
+      "default": "./src/gates.ts"
+    },
+    "./propose": {
+      "types": {
+        "openwork-build": "./dist/types/src/propose.d.ts",
+        "default": "./src/propose.ts"
+      },
+      "development": "./src/propose.ts",
+      "default": "./src/propose.ts"
     }
   },
   "scripts": {

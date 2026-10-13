@@ -66,6 +66,9 @@ export function draftProcessModel(input: DraftInput): ProcessModel {
       cost: null,
       visits: null,
       claim_ids: group.map((claim) => claim.claim_id),
+      pains: [],
+      no_pain_reason: null,
+      simplification: null,
     }
   })
 

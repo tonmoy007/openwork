@@ -3,3 +3,5 @@
 export * from "@openwork/process-model/model"
 export * from "@openwork/process-model/draft"
 export * from "@openwork/process-model/rows"
+export * from "@openwork/process-model/gates"
+export * from "@openwork/process-model/propose"

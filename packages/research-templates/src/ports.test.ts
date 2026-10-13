@@ -192,6 +192,41 @@ test("access matrix follows local roles", async () => {
   }
 })
 
+test("project lookup, phase moves, and latest snapshots", async () => {
+  const store = await openStore(":memory:")
+  try {
+    assert.equal(store.getProject("missing"), null)
+    const project = store.createProject({
+      name: "Welfare Grant",
+      template_ref: "sps-ecrs-v1@1.0",
+      knowledge_category: "service-evidence",
+    })
+    assert.equal(store.getProject(project.id)?.phase, "evidence")
+    assert.equal(store.latestSnapshot(project.id, "as_is"), null)
+    store.setProjectPhase(project.id, "processing")
+    assert.equal(store.getProject(project.id)?.phase, "processing")
+
+    const first = store.saveSnapshot({
+      project_id: project.id,
+      stage: "as_is",
+      model_json: JSON.stringify({ steps: ["ward"] }),
+    })
+    const second = store.saveSnapshot({
+      project_id: project.id,
+      stage: "as_is",
+      model_json: JSON.stringify({ steps: ["ward", "union"] }),
+      supersedes: first.id,
+    })
+    assert.equal(store.latestSnapshot(project.id, "as_is")?.id, second.id)
+    assert.equal(store.latestSnapshot(project.id, "to_be"), null)
+    assert.throws(() => store.setProjectPhase("missing", "processing"), (error: unknown) => {
+      return error instanceof Error && "code" in error && error.code === NOT_FOUND
+    })
+  } finally {
+    store.close()
+  }
+})
+
 test("snapshots are append-only and supersede", async () => {
   const store = await openStore(":memory:")
   try {
@@ -289,5 +324,35 @@ test("EE stubs throw EE_NOT_CONFIGURED with local fallback copy", async () => {
         error.message.includes("stays local")
       )
     })
+  }
+})
+
+test("constraints persist in order", async () => {
+  const store = await openStore(":memory:")
+  try {
+    const project = store.createProject({
+      name: "Welfare Grant",
+      template_ref: "sps-ecrs-v1@1.0",
+      knowledge_category: "service-evidence",
+    })
+    assert.deepEqual(store.listConstraints(project.id), [])
+    store.saveConstraint({
+      project_id: project.id,
+      statement: "The officer decision stays.",
+      reason: "Labour Welfare Act s.14 names the decider.",
+      claim_ids: ["f2:c1"],
+    })
+    store.saveConstraint({
+      project_id: project.id,
+      statement: "Bengali form stays available.",
+      reason: "Claimants read Bengali.",
+      claim_ids: [],
+    })
+    const listed = store.listConstraints(project.id)
+    assert.equal(listed.length, 2)
+    assert.equal(listed[0].statement, "The officer decision stays.")
+    assert.deepEqual(listed[1].claim_ids, [])
+  } finally {
+    store.close()
   }
 })

@@ -45,6 +45,7 @@
     "@openwork/browser-tabs": "workspace:*",
     "@openwork/calendar": "workspace:*",
     "@openwork/install-config": "workspace:*",
+    "@openwork/process-model": "workspace:*",
     "@openwork/types": "workspace:*",
     "@openwork/ui": "workspace:*",
     "@openwork/workbook": "workspace:*",

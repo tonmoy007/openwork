@@ -15,6 +15,7 @@ const LINES_PER_PAGE = 45
 const TAG_KEYWORDS: Array<{ tag: string; words: string[] }> = [
   { tag: "certificate", words: ["certificate", "certified", "attested"] },
   { tag: "registry", words: ["registry", "database", "record", "bris"] },
+  { tag: "duplication", words: ["duplicat", "already holds", "same legal fact"] },
   { tag: "cost", words: ["taka", "fee", "cost", "payment", "charge"] },
   { tag: "travel", words: ["visit", "trip", "travel", "bus", "office"] },
   { tag: "form", words: ["form", "application", "field", "fill"] },

@@ -417,6 +417,82 @@ export const researchGateSchema = z.object({
 });
 export type ResearchGate = z.infer<typeof researchGateSchema>;
 
+export const asisPainSchema = z.object({
+  pain_id: z.string(),
+  dimension: z.string(),
+  finding: z.string(),
+  severity: z.enum(["low", "medium", "high"]),
+  claim_ids: z.array(z.string()),
+});
+
+export const simplificationSchema = z.object({
+  criterion_id: z.string(),
+  action: z.string(),
+  proposal: z.string(),
+  reason: z.string(),
+  claim_ids: z.array(z.string()),
+  state: z.enum(["proposed", "accepted", "rejected", "revised"]),
+  revised_from: z.string().nullable(),
+  decided_by: z.string().nullable(),
+});
+
+export const asisStepSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  detail: z.string(),
+  actor: z.string(),
+  time: z.string().nullable(),
+  cost: z.string().nullable(),
+  visits: z.string().nullable(),
+  claim_ids: z.array(z.string()),
+  pains: z.array(asisPainSchema),
+  no_pain_reason: z.string().nullable(),
+  simplification: simplificationSchema.nullable().optional(),
+});
+export type AsisStep = z.infer<typeof asisStepSchema>;
+
+export const asisModelSchema = z.object({
+  version: z.literal("1.0"),
+  stage: z.enum(["as_is", "processing", "to_be"]),
+  steps: z.array(asisStepSchema),
+  lanes: z.array(z.object({ id: z.string(), label: z.string(), step_ids: z.array(z.string()) })),
+  edges: z.array(z.object({ from: z.string(), to: z.string() })),
+  provenance: z.object({ draft: z.string(), sources: z.array(z.string()) }),
+});
+export type AsisModel = z.infer<typeof asisModelSchema>;
+
+export const asisConfirmSchema = z.object({
+  ready: z.boolean(),
+  unresolved_count: z.number(),
+  total_count: z.number(),
+  reasons: z.array(z.string()),
+});
+export type AsisConfirm = z.infer<typeof asisConfirmSchema>;
+
+export const processingStepSchema = asisStepSchema.extend({
+  simplification: simplificationSchema.nullable(),
+});
+
+export const processingModelSchema = z.object({
+  version: z.literal("1.0"),
+  stage: z.string(),
+  steps: z.array(processingStepSchema),
+  lanes: z.array(z.object({ id: z.string(), label: z.string(), step_ids: z.array(z.string()) })),
+  edges: z.array(z.object({ from: z.string(), to: z.string() })),
+  provenance: z.object({ draft: z.string(), sources: z.array(z.string()) }),
+});
+export type ProcessingModel = z.infer<typeof processingModelSchema>;
+
+export const projectConstraintSchema = z.object({
+  constraint_id: z.string(),
+  project_id: z.string(),
+  statement: z.string(),
+  reason: z.string(),
+  claim_ids: z.array(z.string()),
+  created_at: z.string(),
+});
+export type ProjectConstraint = z.infer<typeof projectConstraintSchema>;
+
 export type OpenworkSessionMessage = {
   info: Message;
   parts: Part[];
@@ -1800,6 +1876,53 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
     getResearchGates: async (projectId: string): Promise<{ evidence: ResearchGate }> => {
       const body = await requestJson<{ evidence: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/gates`, { token, timeoutMs: timeouts.listWorkspaces });
       return { evidence: researchGateSchema.parse(body.evidence) };
+    },
+    draftAsis: async (projectId: string): Promise<{ model: AsisModel }> => {
+      const body = await requestJson<{ model: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/asis/draft`, { token, method: "POST", body: {}, timeoutMs: timeouts.activateWorkspace });
+      return { model: asisModelSchema.parse(body.model) };
+    },
+    getAsis: async (projectId: string): Promise<{ model: AsisModel | null; confirm: AsisConfirm }> => {
+      const body = await requestJson<{ model: unknown; confirm: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/asis`, { token, timeoutMs: timeouts.listWorkspaces });
+      return {
+        model: body.model === null ? null : asisModelSchema.parse(body.model),
+        confirm: asisConfirmSchema.parse(body.confirm),
+      };
+    },
+    addAsisPain: async (projectId: string, stepId: string, payload: { dimension: string; finding: string; severity: string; claim_ids: string[] }): Promise<{ model: AsisModel }> => {
+      const body = await requestJson<{ model: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/asis/steps/${encodeURIComponent(stepId)}/pains`, { token, method: "POST", body: payload, timeoutMs: timeouts.activateWorkspace });
+      return { model: asisModelSchema.parse(body.model) };
+    },
+    clearAsisStep: async (projectId: string, stepId: string, reason: string): Promise<{ model: AsisModel }> => {
+      const body = await requestJson<{ model: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/asis/steps/${encodeURIComponent(stepId)}/no-pain`, { token, method: "POST", body: { reason }, timeoutMs: timeouts.activateWorkspace });
+      return { model: asisModelSchema.parse(body.model) };
+    },
+    confirmAsis: async (projectId: string): Promise<{ confirm: AsisConfirm; phase: string }> => {
+      const body = await requestJson<{ confirm: unknown; phase: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/asis/confirm`, { token, method: "POST", body: {}, timeoutMs: timeouts.activateWorkspace });
+      return { confirm: asisConfirmSchema.parse(body.confirm), phase: z.string().parse(body.phase) };
+    },
+    listConstraints: async (projectId: string): Promise<ProjectConstraint[]> => {
+      const body = await requestJson<{ constraints: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/constraints`, { token, timeoutMs: timeouts.listWorkspaces });
+      return z.array(projectConstraintSchema).parse(body.constraints);
+    },
+    addConstraint: async (projectId: string, payload: { statement: string; reason: string; claim_ids: string[] }): Promise<ProjectConstraint> => {
+      const body = await requestJson<{ constraint: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/constraints`, { token, method: "POST", body: payload, timeoutMs: timeouts.activateWorkspace });
+      return projectConstraintSchema.parse(body.constraint);
+    },
+    proposeSimplifications: async (projectId: string): Promise<{ model: ProcessingModel; undecided: string[] }> => {
+      const body = await requestJson<{ model: unknown; undecided: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/processing/propose`, { token, method: "POST", body: {}, timeoutMs: timeouts.activateWorkspace });
+      return { model: processingModelSchema.parse(body.model), undecided: z.array(z.string()).parse(body.undecided) };
+    },
+    getProcessing: async (projectId: string): Promise<{ model: ProcessingModel | null; undecided: string[]; constraints: ProjectConstraint[] }> => {
+      const body = await requestJson<{ model: unknown; undecided: unknown; constraints: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/processing`, { token, timeoutMs: timeouts.listWorkspaces });
+      return {
+        model: body.model === null ? null : processingModelSchema.parse(body.model),
+        undecided: z.array(z.string()).parse(body.undecided),
+        constraints: z.array(projectConstraintSchema).parse(body.constraints),
+      };
+    },
+    decideSimplification: async (projectId: string, stepId: string, payload: { state: string; proposal?: string; reason?: string; criterion_id?: string; action?: string; claim_ids?: string[] }): Promise<{ model: ProcessingModel; undecided: string[] }> => {
+      const body = await requestJson<{ model: unknown; undecided: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/processing/steps/${encodeURIComponent(stepId)}/decide`, { token, method: "POST", body: payload, timeoutMs: timeouts.activateWorkspace });
+      return { model: processingModelSchema.parse(body.model), undecided: z.array(z.string()).parse(body.undecided) };
     },
     createLocalWorkspace: (payload: { folderPath: string; name: string; preset: string }) =>
       requestJson<WorkspaceList>(baseUrl, "/workspaces/local", {

@@ -50,7 +50,7 @@ export function tableRows(
       time: step.time,
       cost: step.cost,
       visits: step.visits,
-      type: "draft",
+      type: step.pains.length > 0 ? "pain" : "draft",
       claim_count: step.claim_ids.length,
       sources,
     }

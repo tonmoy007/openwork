@@ -4,8 +4,10 @@ import {
   checkModelIntegrity,
   processModelSchema,
   stepsHaveClaims,
+  stepsMissingResolution,
   type ProcessModel,
 } from "@openwork/process-model/model"
+import { evaluateConfirmGate } from "@openwork/process-model/gates"
 
 function validModel(): ProcessModel {
   return {
@@ -21,6 +23,9 @@ function validModel(): ProcessModel {
         cost: null,
         visits: "3",
         claim_ids: ["f1:c1"],
+        pains: [],
+        no_pain_reason: null,
+        simplification: null,
       },
       {
         id: "step-2",
@@ -31,6 +36,9 @@ function validModel(): ProcessModel {
         cost: null,
         visits: null,
         claim_ids: ["f2:c1"],
+        pains: [],
+        no_pain_reason: "Core government work",
+        simplification: null,
       },
     ],
     lanes: [
@@ -68,6 +76,9 @@ test("integrity flags duplicate ids, dangling edges, and unlaned steps", () => {
     cost: null,
     visits: null,
     claim_ids: ["f1:c2"],
+    pains: [],
+    no_pain_reason: null,
+    simplification: null,
   })
   const issues = checkModelIntegrity(model)
   assert.ok(issues.some((issue) => issue.message.includes("duplicate step id")))
@@ -79,4 +90,34 @@ test("stepsHaveClaims lists claimless steps", () => {
   const model = validModel()
   const loose = { ...model.steps[0], claim_ids: [] as string[] }
   assert.deepEqual(stepsHaveClaims({ ...model, steps: [loose] }), ["step-1"])
+})
+
+test("confirm gate opens on pains or explicit all-clear", () => {
+  const model = validModel()
+  assert.deepEqual(stepsMissingResolution(model), ["step-1"])
+  assert.equal(evaluateConfirmGate(model).ready, false)
+
+  const resolved: ProcessModel = {
+    ...model,
+    steps: [
+      {
+        ...model.steps[0],
+        pains: [
+          {
+            pain_id: "pain-1",
+            dimension: "trips",
+            finding: "Three visits on average",
+            severity: "high",
+            claim_ids: ["f1:c1"],
+          },
+        ],
+      },
+      model.steps[1],
+    ],
+  }
+  assert.deepEqual(stepsMissingResolution(resolved), [])
+  const gate = evaluateConfirmGate(resolved)
+  assert.equal(gate.ready, true)
+  assert.ok(gate.reasons[0].includes("All 2 steps"))
+  assert.equal(evaluateConfirmGate(null).ready, false)
 })
