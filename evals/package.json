@@ -28,6 +28,7 @@
     "@openwork/labs": "workspace:*",
     "@openwork/matchers": "workspace:*",
     "@openwork/review": "link:../packages/review",
+    "@openwork/research-templates": "link:../packages/research-templates",
     "@openwork/sdk": "link:../packages/sdk",
     "@openwork/design-review": "workspace:*",
     "@openwork/test-artifacts": "workspace:*",

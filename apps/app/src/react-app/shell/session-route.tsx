@@ -276,6 +276,7 @@ import {
   automationsRoute,
   calendarRoute,
   dashboardRoute,
+  researchPortfolioRoute,
   workspaceExtensionsRoute,
   workspaceSessionRoute,
   workspaceSettingsRoute,
@@ -401,6 +402,7 @@ export function SessionRoute() {
   const location = useLocation();
   const appsRouteActive = /^(?:\/apps|\/dashboard\/apps)(?:\/|$)/.test(location.pathname);
   const automationsRouteRequested = /^\/automations(?:\/|$)/.test(location.pathname);
+  const researchRouteRequested = /^\/research(?:\/|$)/.test(location.pathname);
   const dashboardRouteRequested = /^\/dashboard(?:\/|$)/.test(location.pathname);
   const calendarRouteRequested = /^\/calendar(?:\/|$)/.test(location.pathname);
   const activityRouteRequested = location.pathname === "/activity";
@@ -428,6 +430,8 @@ export function SessionRoute() {
   const automationsEnabled = automationDeploymentEnabled;
   const automationsSurfaceAvailable = automationsEnabled || signedOutDesktopSurfaces;
   const automationsRouteActive = automationsSurfaceAvailable && automationsRouteRequested;
+  // Research is local-first: available on desktop without sign-in or Den.
+  const researchRouteActive = researchRouteRequested;
   // The Calendar is an Automations view behind the automationCalendar feature.
   const calendarFeature = useCalendarFeature(useAutomationsDenContext());
   const calendarSurfaceAvailable = automationsEnabled && denAuth.isSignedIn && calendarFeature.data === true;
@@ -3824,6 +3828,10 @@ export function SessionRoute() {
               navigate(calendarRoute());
             }
           : undefined,
+        researchActive: researchRouteActive,
+        onOpenResearch: () => {
+          navigate(researchPortfolioRoute());
+        },
         dashboardActive: dashboardRouteActive || appsRouteActive,
         onOpenDashboard: dashboardSurfaceAvailable
           ? () => {

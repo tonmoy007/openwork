@@ -1,0 +1,64 @@
+{
+  "id": "sps-ecrs-v1",
+  "version": "1.0",
+  "knowledge_sections": [
+    { "key": "sop", "evidence_types": ["sop", "bpmn"], "extract": "extract-steps" },
+    { "key": "legal", "evidence_types": ["law"], "extract": "extract-constraints" },
+    { "key": "experience", "evidence_types": ["interview", "survey"], "extract": "extract-pains" }
+  ],
+  "as_is": {
+    "step_fields": ["actor", "time", "cost", "visits"],
+    "pain_dimensions": ["delay", "cost", "trips", "duplication", "legal_basis", "exclusion", "language_access", "rework"],
+    "gap_loop": { "max_rounds": 5, "confirm_gate": "user_accept", "question_policy": "one_at_a_time" }
+  },
+  "simplification": {
+    "constraint_capture": { "prompt": "extract-constraints", "save_to": "project.knowledge.constraints" },
+    "criteria": [
+      { "id": "eliminate", "label": "Eliminate — remove this step entirely", "evaluation_prompt": "propose-criterion", "needs_constraint": true },
+      { "id": "combine", "label": "Combine — merge with another step", "evaluation_prompt": "propose-criterion", "needs_constraint": true },
+      { "id": "rearrange", "label": "Rearrange — change the order", "evaluation_prompt": "propose-criterion", "needs_constraint": false },
+      { "id": "simplify", "label": "Simplify — make this step easier", "evaluation_prompt": "propose-criterion", "needs_constraint": false },
+      { "id": "keep", "label": "Keep — required as is", "evaluation_prompt": "propose-criterion", "needs_constraint": true }
+    ],
+    "decision_states": ["proposed", "accepted", "rejected", "revised"],
+    "back_edges": ["to_as_is", "to_constraint"]
+  },
+  "cost_model": {
+    "measures": ["visits", "time_to_decision", "out_of_pocket", "steps"],
+    "formulas": {
+      "visits_saved": "sum(as_is.visits) - sum(tobe.visits)",
+      "visits_saved_pct": "pct(sum(as_is.visits), sum(tobe.visits))",
+      "time_saved": "sum(as_is.time_to_decision) - sum(tobe.time_to_decision)",
+      "cost_saved": "sum(as_is.out_of_pocket) - sum(tobe.out_of_pocket)"
+    },
+    "units": { "currency": "taka", "time": "days" }
+  },
+  "tobe": { "policy": "single", "axes": ["cheapest"], "side_by_side": true },
+  "outputs": ["table", "bpmn_svg", "bpmn_xml", "impact_cards", "report_html", "report_pdf", "blueprint_html", "blueprint_pdf", "decision_html", "decision_pdf", "table_xlsx", "decision_record"],
+  "agents": {
+    "definitions": [
+      { "id": "asis-miner", "role": "As-is step extractor", "prompt_ref": "extract-steps", "model_pin": "default", "capabilities": ["step_extraction"], "strength_sections": ["sop", "bpmn"], "fallback": "gap-asker", "cost": 1, "latency": 1 },
+      { "id": "legal-miner", "role": "Legal constraint miner", "prompt_ref": "extract-constraints", "model_pin": "default", "capabilities": ["legal_grounding"], "strength_sections": ["law"], "fallback": "gap-asker", "cost": 1, "latency": 1 },
+      { "id": "experience-miner", "role": "Citizen experience miner", "prompt_ref": "extract-pains", "model_pin": "default", "capabilities": ["pain_finding"], "strength_sections": ["interview", "survey"], "fallback": "gap-asker", "cost": 1, "latency": 1 },
+      { "id": "gap-asker", "role": "Gap question asker", "prompt_ref": "gap-question", "model_pin": "default", "capabilities": ["gap_clarification"], "strength_sections": ["sop", "interview"], "fallback": "asis-miner", "cost": 1, "latency": 2 },
+      { "id": "ecrs-proposer", "role": "ECRS proposer", "prompt_ref": "propose-criterion", "model_pin": "default", "capabilities": ["ecrs_reasoning", "eliminate", "combine", "simplify"], "strength_sections": ["sop", "law", "interview"], "fallback": "legal-checker", "cost": 2, "latency": 3 },
+      { "id": "legal-checker", "role": "Legal basis checker", "prompt_ref": "propose-criterion", "model_pin": "default", "capabilities": ["legal_grounding", "constraint_check"], "strength_sections": ["law"], "fallback": "ecrs-proposer", "cost": 2, "latency": 2 },
+      { "id": "bengali-simplifier", "role": "Form simplification specialist", "prompt_ref": "propose-criterion", "model_pin": "default", "capabilities": ["language_access", "simplify"], "strength_sections": ["interview", "sop"], "fallback": "ecrs-proposer", "cost": 2, "latency": 2 },
+      { "id": "bris-proposer", "role": "Registry cross-check proposer", "prompt_ref": "propose-criterion", "model_pin": "default", "capabilities": ["registry_crosscheck", "fallback_design"], "strength_sections": ["sop", "law"], "fallback": "ecrs-proposer", "cost": 2, "latency": 2 },
+      { "id": "tobe-analyst", "role": "To-be variant analyst", "prompt_ref": "propose-criterion", "model_pin": "default", "capabilities": ["variant_design", "cost_reasoning"], "strength_sections": ["sop", "law"], "fallback": "ecrs-proposer", "cost": 3, "latency": 4 },
+      { "id": "updater", "role": "Model updater (applies, never proposes)", "prompt_ref": "extract-steps", "model_pin": "default", "capabilities": ["model_apply"], "strength_sections": ["sop"], "fallback": "asis-miner", "cost": 1, "latency": 1 }
+    ],
+    "routing": {
+      "mode": "auto_with_override",
+      "decision_model": "tie-break-judge",
+      "tie_break_margin": 0.03,
+      "preset": "balanced",
+      "weights": { "capability": 0.35, "evidence": 0.25, "quality": 0.2, "cost": 0.1, "latency": 0.1 }
+    },
+    "fan_out": [
+      { "scope": "per_section", "task": "extract", "concurrency_cap": 2 },
+      { "scope": "per_step", "task": "propose", "concurrency_cap": 2 }
+    ],
+    "funnel": { "conflict": "evidence_recency_plus_legal_priority", "quorum": "single_reviewer_accept", "provenance_required": true }
+  }
+}

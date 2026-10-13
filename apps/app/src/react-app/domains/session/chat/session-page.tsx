@@ -187,6 +187,8 @@ export type SessionPageSidebarProps = {
   onOpenCalendar?: () => void;
   dashboardActive?: boolean;
   onOpenDashboard?: () => void;
+  researchActive?: boolean;
+  onOpenResearch?: () => void;
   /** Opens the cross-session message search dialog (Cmd/Ctrl+Shift+F). */
   onOpenSessionSearch?: () => void;
   onReorderWorkspaces?: (workspaceIds: string[]) => void;
@@ -1407,6 +1409,8 @@ export function SessionPage(props: SessionPageProps) {
           onOpenCalendar={props.sidebar.onOpenCalendar}
           dashboardActive={props.sidebar.dashboardActive}
           onOpenDashboard={props.sidebar.onOpenDashboard}
+          researchActive={props.sidebar.researchActive}
+          onOpenResearch={props.sidebar.onOpenResearch}
           conversationHistory={{
             canGoBack: canGoBackInConversationHistory,
             canGoForward: canGoForwardInConversationHistory,

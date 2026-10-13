@@ -172,6 +172,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  researchWorkspace: {
+    label: "Research workspace",
+    description: "Researchers run template-driven simplification projects with as-is, simplification, and to-be stages.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
 })
 
 export type FeatureKey = keyof typeof FEATURES

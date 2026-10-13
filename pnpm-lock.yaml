@@ -464,6 +464,9 @@ importers:
       '@openwork/free-auto':
         specifier: workspace:*
         version: link:../../packages/free-auto
+      '@openwork/research-templates':
+        specifier: workspace:*
+        version: link:../../packages/research-templates
       '@openwork/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -1764,6 +1767,19 @@ importers:
         version: 19.2.14
 
   packages/remote-sessions: {}
+
+  packages/research-templates:
+    dependencies:
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
 
   packages/review:
     dependencies:

@@ -188,6 +188,16 @@
               ],
               "description": "Remote session events: MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting. Renders DEN_FEATURE_REMOTE_SESSION_EVENTS."
             },
+            "researchWorkspace": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Research workspace: Researchers run template-driven simplification projects with as-is, simplification, and to-be stages. Renders DEN_FEATURE_RESEARCH_WORKSPACE."
+            },
             "gatewayDashboard": {
               "enum": [
                 "",

@@ -1,0 +1,237 @@
+/** @jsxImportSource react */
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useParams } from "react-router";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useBootState } from "@/react-app/shell/boot-state";
+import { researchPortfolioRoute } from "./research-routes";
+import { useResearchClient } from "./use-research-client";
+
+const EVIDENCE_TYPES = ["sop", "law", "form", "interview", "bpmn"];
+
+export function ResearchEvidencePage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { projectId = "" } = useParams();
+  const { client, status } = useResearchClient();
+  const [text, setText] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [fileType, setFileType] = useState(EVIDENCE_TYPES[0]);
+  const [error, setError] = useState<string | null>(null);
+
+  const evidence = useQuery({
+    queryKey: ["research", "evidence", projectId],
+    queryFn: () => client!.getResearchEvidence(projectId),
+    enabled: client !== null && projectId !== "",
+  });
+  const { markRouteReady } = useBootState();
+
+  useEffect(() => {
+    if (status !== "connecting" && !evidence.isPending) markRouteReady();
+  }, [status, evidence.isPending, markRouteReady]);
+
+  const upload = useMutation({
+    mutationFn: () =>
+      client!.uploadResearchEvidence(projectId, {
+        name: fileName.trim() || "pasted-evidence.txt",
+        type: fileType,
+        text,
+      }),
+    onSuccess: () => {
+      setText("");
+      setFileName("");
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["research", "evidence", projectId] });
+    },
+    onError: (cause) =>
+      setError(cause instanceof Error ? cause.message : "Upload did not finish."),
+  });
+
+  if (status === "unavailable") {
+    return (
+      <div className="mx-auto w-full max-w-3xl p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Local server unavailable</CardTitle>
+            <CardDescription>The desktop server is not reachable. Restart the app, then try again.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Reload
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (status !== "ready" || evidence.isPending) {
+    return (
+      <div className="mx-auto w-full max-w-3xl p-6">
+        <Skeleton className="mb-2 h-7 w-48" />
+        <Skeleton className="mb-6 h-4 w-72" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+
+  if (evidence.isError) {
+    return (
+      <div className="mx-auto w-full max-w-3xl p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Evidence did not load</CardTitle>
+            <CardDescription>Check the local server is running, then try again.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => void evidence.refetch()}>
+                Try again
+              </Button>
+              <Button variant="ghost" onClick={() => navigate(researchPortfolioRoute())}>
+                Back to projects
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const files = evidence.data.files;
+  const gate = evidence.data.gate;
+  const indexed = gate.indexed_count;
+  const total = Math.max(gate.total_count, 1);
+
+  return (
+    <div className="mx-auto w-full max-w-3xl p-6">
+      <div className="mb-6">
+        <h1 className="text-xl font-semibold tracking-tight">Evidence library</h1>
+        <p className="text-sm text-muted-foreground">
+          Every law, SOP, form, and observation cited and tagged.
+        </p>
+      </div>
+
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>Add evidence</CardTitle>
+          <CardDescription>
+            Paste SOPs, laws, forms, or interview notes. Each upload is indexed into citable sections.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex gap-3">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="evidence-name">File name</Label>
+              <Input
+                id="evidence-name"
+                value={fileName}
+                onChange={(event) => setFileName(event.target.value)}
+                placeholder="Welfare_Board_SOP_2019.txt"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Type</Label>
+              <Select value={fileType} onValueChange={(value) => setFileType(value ?? EVIDENCE_TYPES[0])}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EVIDENCE_TYPES.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="evidence-text">Evidence text</Label>
+            <Textarea
+              id="evidence-text"
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              placeholder="Paste the document text here…"
+              rows={6}
+            />
+          </div>
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <div>
+            <Button
+              disabled={upload.isPending || text.trim().length === 0}
+              onClick={() => upload.mutate()}
+            >
+              {upload.isPending ? "Indexing…" : "Upload and index"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>
+            Indexed {indexed} of {gate.total_count} files
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Progress value={(indexed / total) * 100} />
+          {files.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No evidence files yet. Add the first one above.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {files.map((file) => (
+                <div
+                  key={file.file_id}
+                  className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{file.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {file.type} · {file.claims.length} sections
+                    </p>
+                  </div>
+                  <Badge variant={file.status === "indexed" ? "default" : "secondary"}>
+                    {file.status}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {gate.ready ? (
+        <Alert>
+          <AlertTitle>Evidence ready</AlertTitle>
+          <AlertDescription>
+            {gate.reasons[0]} The as-is workspace arrives in the next slice — nothing to start yet.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <Alert>
+          <AlertTitle>Not ready to start simplifying</AlertTitle>
+          <AlertDescription>{gate.reasons.join(" ")}</AlertDescription>
+        </Alert>
+      )}
+    </div>
+  );
+}

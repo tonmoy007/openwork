@@ -1,0 +1,93 @@
+{
+  "name": "@openwork/research-templates",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Versioned research templates for template-driven simplification projects (SPS research workspace).",
+  "exports": {
+    ".": {
+      "types": {
+        "openwork-build": "./dist/types/src/index.d.ts",
+        "default": "./src/index.ts"
+      },
+      "development": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./schema": {
+      "types": {
+        "openwork-build": "./dist/types/src/schema.d.ts",
+        "default": "./src/schema.ts"
+      },
+      "development": "./src/schema.ts",
+      "default": "./src/schema.ts"
+    },
+    "./validate": {
+      "types": {
+        "openwork-build": "./dist/types/src/validate.d.ts",
+        "default": "./src/validate.ts"
+      },
+      "development": "./src/validate.ts",
+      "default": "./src/validate.ts"
+    },
+    "./router": {
+      "types": {
+        "openwork-build": "./dist/types/src/router.d.ts",
+        "default": "./src/router.ts"
+      },
+      "development": "./src/router.ts",
+      "default": "./src/router.ts"
+    },
+    "./ports": {
+      "types": {
+        "openwork-build": "./dist/types/src/ports.d.ts",
+        "default": "./src/ports.ts"
+      },
+      "development": "./src/ports.ts",
+      "default": "./src/ports.ts"
+    },
+    "./adapters/local-sqlite": {
+      "types": {
+        "openwork-build": "./dist/types/src/adapters/local-sqlite.d.ts",
+        "default": "./src/adapters/local-sqlite.ts"
+      },
+      "development": "./src/adapters/local-sqlite.ts",
+      "default": "./src/adapters/local-sqlite.ts"
+    },
+    "./adapters/ee-stub": {
+      "types": {
+        "openwork-build": "./dist/types/src/adapters/ee-stub.d.ts",
+        "default": "./src/adapters/ee-stub.ts"
+      },
+      "development": "./src/adapters/ee-stub.ts",
+      "default": "./src/adapters/ee-stub.ts"
+    },
+    "./claims": {
+      "types": {
+        "openwork-build": "./dist/types/src/claims.d.ts",
+        "default": "./src/claims.ts"
+      },
+      "development": "./src/claims.ts",
+      "default": "./src/claims.ts"
+    },
+    "./gates": {
+      "types": {
+        "openwork-build": "./dist/types/src/gates.d.ts",
+        "default": "./src/gates.ts"
+      },
+      "development": "./src/gates.ts",
+      "default": "./src/gates.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "node --test src/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.3"
+  }
+}

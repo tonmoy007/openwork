@@ -59,6 +59,10 @@ export function dashboardRoute() {
   return "/dashboard";
 }
 
+export function researchPortfolioRoute() {
+  return "/research";
+}
+
 export function globalSettingsRoute(tab: SettingsTab) {
   return `/settings/${tab}`;
 }

@@ -375,6 +375,48 @@ export type OpenworkWorkspaceList = {
   activeId?: string | null;
 };
 
+export const researchProjectSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  country: z.string(),
+  institution: z.string(),
+  template_ref: z.string(),
+  knowledge_category: z.string(),
+  phase: z.string(),
+  created_at: z.string(),
+});
+export type ResearchProject = z.infer<typeof researchProjectSchema>;
+
+export const researchClaimSchema = z.object({
+  claim_id: z.string(),
+  file_id: z.string(),
+  page: z.number(),
+  section: z.string(),
+  quote: z.string(),
+  tags: z.array(z.string()),
+  hash: z.string(),
+});
+
+export const researchEvidenceFileSchema = z.object({
+  file_id: z.string(),
+  project_id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  size: z.number(),
+  status: z.enum(["uploading", "indexing", "indexed", "failed"]),
+  claims: z.array(researchClaimSchema),
+});
+export type ResearchEvidenceFile = z.infer<typeof researchEvidenceFileSchema>;
+
+export const researchGateSchema = z.object({
+  ready: z.boolean(),
+  indexed_count: z.number(),
+  total_count: z.number(),
+  reasons: z.array(z.string()),
+});
+export type ResearchGate = z.infer<typeof researchGateSchema>;
+
 export type OpenworkSessionMessage = {
   info: Message;
   parts: Part[];
@@ -1739,6 +1781,26 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
         timeoutMs: timeouts.binary,
       }),
     listWorkspaces: () => requestJson<OpenworkWorkspaceList>(baseUrl, "/workspaces", { token, hostToken, timeoutMs: timeouts.listWorkspaces }),
+    listResearchProjects: async (): Promise<ResearchProject[]> => {
+      const body = await requestJson<{ projects: unknown }>(baseUrl, "/research/projects", { token, timeoutMs: timeouts.listWorkspaces });
+      return z.array(researchProjectSchema).parse(body.projects);
+    },
+    createResearchProject: async (payload: { name: string; description?: string; country?: string; institution?: string; template_ref: string; knowledge_category: string }): Promise<ResearchProject> => {
+      const body = await requestJson<{ project: unknown }>(baseUrl, "/research/projects", { token, method: "POST", body: payload, timeoutMs: timeouts.activateWorkspace });
+      return researchProjectSchema.parse(body.project);
+    },
+    getResearchEvidence: async (projectId: string): Promise<{ files: ResearchEvidenceFile[]; gate: ResearchGate }> => {
+      const body = await requestJson<{ files: unknown; gate: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/evidence`, { token, timeoutMs: timeouts.listWorkspaces });
+      return { files: z.array(researchEvidenceFileSchema).parse(body.files), gate: researchGateSchema.parse(body.gate) };
+    },
+    uploadResearchEvidence: async (projectId: string, payload: { name: string; type: string; text: string }): Promise<{ file: ResearchEvidenceFile; gate: ResearchGate }> => {
+      const body = await requestJson<{ file: unknown; gate: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/evidence`, { token, method: "POST", body: payload, timeoutMs: timeouts.workspaceExport });
+      return { file: researchEvidenceFileSchema.parse(body.file), gate: researchGateSchema.parse(body.gate) };
+    },
+    getResearchGates: async (projectId: string): Promise<{ evidence: ResearchGate }> => {
+      const body = await requestJson<{ evidence: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/gates`, { token, timeoutMs: timeouts.listWorkspaces });
+      return { evidence: researchGateSchema.parse(body.evidence) };
+    },
     createLocalWorkspace: (payload: { folderPath: string; name: string; preset: string }) =>
       requestJson<WorkspaceList>(baseUrl, "/workspaces/local", {
         token,

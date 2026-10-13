@@ -103,6 +103,7 @@ import { externalFetch, loopbackFetch, transferResponseBody } from "./server-fet
 import { registerCoreRoutes } from "./routes/core.js";
 import { registerFileRoutes } from "./routes/files.js";
 import { registerOperationRoutes } from "./routes/operations.js";
+import { registerResearchRoutes } from "./routes/research.js";
 import { addRoute, matchRoute, type AuthMode, type RequestContext, type Route } from "./routes/registry.js";
 import { registerSessionGroupRoutes } from "./routes/session-groups.js";
 import { registerWorkspaceDefaultModelRoutes } from "./routes/workspace-default-model.js";
@@ -2776,6 +2777,14 @@ function createRoutes(
     requireClientScope,
     resolveWorkspace,
     resolveWorkspaceWithoutBootstrap,
+  });
+
+  registerResearchRoutes({
+    routes,
+    config,
+    jsonResponse,
+    readJsonBody,
+    ensureWritable,
   });
 
   registerWorkspaceDefaultModelRoutes({

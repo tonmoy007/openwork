@@ -49,6 +49,9 @@ import {
 } from "./control/control-provider";
 import { OpenworkContextPublisher } from "./openwork-context-publisher";
 import { SessionRoute } from "./session-route";
+import { ResearchEvidencePage } from "../domains/research/evidence-page";
+import { ResearchNewProjectPage } from "../domains/research/new-project-page";
+import { ResearchPortfolioPage } from "../domains/research/portfolio-page";
 import { DesktopUpdaterProvider } from "../domains/settings/state/desktop-updater-provider";
 import { SettingsRoute } from "./settings-route";
 import { ShellConfigProvider } from "./shell-config";
@@ -515,6 +518,9 @@ export function AppRoot() {
                 }
               />
               <Route path="/calendar" element={<DevProfiler id="CalendarRoute"><SessionRoute /></DevProfiler>} />
+              <Route path="/research" element={<DevProfiler id="ResearchPortfolioRoute"><ResearchPortfolioPage /></DevProfiler>} />
+              <Route path="/research/new" element={<DevProfiler id="ResearchNewProjectRoute"><ResearchNewProjectPage /></DevProfiler>} />
+              <Route path="/research/:projectId/evidence" element={<DevProfiler id="ResearchEvidenceRoute"><ResearchEvidencePage /></DevProfiler>} />
               <Route path="/activity" element={<DevProfiler id="ActivityRoute"><SessionRoute /></DevProfiler>} />
               <Route path="/apps" element={<DevProfiler id="AppsRoute"><SessionRoute /></DevProfiler>} />
               <Route path="/dashboard/apps/:appId" element={<DevProfiler id="DashboardAppRoute"><SessionRoute /></DevProfiler>} />
