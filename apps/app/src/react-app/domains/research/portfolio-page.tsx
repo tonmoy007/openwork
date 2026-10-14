@@ -82,6 +82,12 @@ export function ResearchPortfolioPage() {
         <Button onClick={() => navigate(researchNewProjectRoute())}>New project</Button>
       </div>
 
+      <div className="mb-4">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/research/templates")}>
+          Template library
+        </Button>
+      </div>
+
       {items.length === 0 ? (
         <Empty>
           <EmptyHeader>

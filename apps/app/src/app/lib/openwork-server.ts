@@ -518,6 +518,19 @@ export const exportFileSchema = z.object({
 });
 export type ExportFile = z.infer<typeof exportFileSchema>;
 
+export const templateEntrySchema = z.object({
+  id: z.string(),
+  versions: z.array(z.string()),
+});
+export type TemplateEntry = z.infer<typeof templateEntrySchema>;
+
+export const templateDocSchema = z.object({
+  doc_json: z.string(),
+  version: z.string(),
+  hash: z.string(),
+});
+export type TemplateDoc = z.infer<typeof templateDocSchema>;
+
 export type OpenworkSessionMessage = {
   info: Message;
   parts: Part[];
@@ -1981,6 +1994,30 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
         contentType: response.headers.get("content-type") ?? "application/octet-stream",
         filename,
       };
+    },
+    listTemplates: async (): Promise<TemplateEntry[]> => {
+      const body = await requestJson<{ templates: unknown }>(baseUrl, "/research/templates", { token, timeoutMs: timeouts.listWorkspaces });
+      return z.array(templateEntrySchema).parse(body.templates);
+    },
+    getTemplateDoc: async (id: string, version?: string): Promise<TemplateDoc> => {
+      const query = version ? `?version=${encodeURIComponent(version)}` : "";
+      const body = await requestJson<TemplateDoc>(baseUrl, `/research/templates/${encodeURIComponent(id)}${query}`, { token, timeoutMs: timeouts.listWorkspaces });
+      return templateDocSchema.parse(body);
+    },
+    saveTemplateDraft: async (doc_json: string): Promise<{ id: string; version: string }> => {
+      const body = await requestJson<{ id: unknown; version: unknown }>(baseUrl, "/research/templates/drafts", { token, method: "POST", body: { doc_json }, timeoutMs: timeouts.activateWorkspace });
+      return { id: z.string().parse(body.id), version: z.string().parse(body.version) };
+    },
+    cloneTemplate: async (id: string): Promise<{ id: string; version: string }> => {
+      const body = await requestJson<{ id: unknown; version: unknown }>(baseUrl, `/research/templates/${encodeURIComponent(id)}/clone`, { token, method: "POST", body: {}, timeoutMs: timeouts.activateWorkspace });
+      return { id: z.string().parse(body.id), version: z.string().parse(body.version) };
+    },
+    seedTemplates: async (): Promise<{ installed: Array<{ id: string; version: string }> }> => {
+      const body = await requestJson<{ installed: unknown }>(baseUrl, "/research/templates/seed", { token, method: "POST", body: {}, timeoutMs: timeouts.activateWorkspace });
+      return { installed: z.array(z.object({ id: z.string(), version: z.string() })).parse(body.installed) };
+    },
+    assignTemplate: async (projectId: string, template_ref: string): Promise<void> => {
+      await requestJson<unknown>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/assign`, { token, method: "POST", body: { template_ref }, timeoutMs: timeouts.activateWorkspace });
     },
     createLocalWorkspace: (payload: { folderPath: string; name: string; preset: string }) =>
       requestJson<WorkspaceList>(baseUrl, "/workspaces/local", {

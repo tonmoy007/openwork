@@ -76,6 +76,14 @@
       },
       "development": "./src/gates.ts",
       "default": "./src/gates.ts"
+    },
+    "./seed": {
+      "types": {
+        "openwork-build": "./dist/types/src/seed.d.ts",
+        "default": "./src/seed.ts"
+      },
+      "development": "./src/seed.ts",
+      "default": "./src/seed.ts"
     }
   },
   "scripts": {

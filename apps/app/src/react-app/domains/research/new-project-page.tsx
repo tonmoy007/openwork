@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { researchEvidenceRoute } from "./research-routes";
 import { useResearchClient } from "./use-research-client";
 
 const KNOWLEDGE_CATEGORIES = ["service-evidence", "global-standards", "local-sops"];
-const TEMPLATES = ["sps-ecrs-v1@1.0"];
+const FALLBACK_TEMPLATES = ["sps-ecrs-v1@1.0"];
 
 export function ResearchNewProjectPage() {
   const navigate = useNavigate();
@@ -30,8 +30,19 @@ export function ResearchNewProjectPage() {
   const [country, setCountry] = useState("");
   const [institution, setInstitution] = useState("");
   const [category, setCategory] = useState(KNOWLEDGE_CATEGORIES[0]);
-  const [template, setTemplate] = useState(TEMPLATES[0]);
+  const [template, setTemplate] = useState(FALLBACK_TEMPLATES[0]);
   const [error, setError] = useState<string | null>(null);
+
+  const library = useQuery({
+    queryKey: ["research", "templates"],
+    queryFn: () => client!.listTemplates(),
+    enabled: client !== null,
+  });
+  const templateOptions =
+    library.data && library.data.length > 0
+      ? library.data.flatMap((entry) => entry.versions.map((version) => `${entry.id}@${version}`))
+      : FALLBACK_TEMPLATES;
+  const effectiveTemplate = templateOptions.includes(template) ? template : templateOptions[0];
   const { markRouteReady } = useBootState();
 
   useEffect(() => {
@@ -45,7 +56,7 @@ export function ResearchNewProjectPage() {
         description: description.trim(),
         country: country.trim(),
         institution: institution.trim(),
-        template_ref: template,
+        template_ref: effectiveTemplate,
         knowledge_category: category,
       }),
     onSuccess: (project) => navigate(researchEvidenceRoute(project.id)),
@@ -124,18 +135,20 @@ export function ResearchNewProjectPage() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Research template</Label>
-              <Select value={template} onValueChange={(value) => setTemplate(value ?? TEMPLATES[0])}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TEMPLATES.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex flex-col gap-2" role="radiogroup" aria-label="Research template">
+                {templateOptions.map((option) => (
+                  <label key={option} className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="research-template"
+                      value={option}
+                      checked={(templateOptions.includes(template) ? template : templateOptions[0]) === option}
+                      onChange={() => setTemplate(option)}
+                    />
+                    <span className="font-mono">{option}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}

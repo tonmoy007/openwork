@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
+import { SEED_TEMPLATES } from "@openwork/research-templates/seed";
 import { evaluateConfirmGate } from "@openwork/process-model/gates";
 import { draftProcessModel } from "@openwork/process-model/draft";
 import { checkModelIntegrity, processModelSchema } from "@openwork/process-model/model";
@@ -13,6 +14,7 @@ import { buildDecisionWorkbook } from "@openwork/process-model/xlsx";
 import { extractClaims } from "@openwork/research-templates/claims";
 import { evaluateEvidenceGate } from "@openwork/research-templates/gates";
 import { openStore, type LocalStore } from "@openwork/research-templates/adapters/local-sqlite";
+import { StoreError } from "@openwork/research-templates/ports";
 import { ApiError } from "../errors.js";
 import type { ServerConfig } from "../types.js";
 import { addRoute, type Route } from "./registry.js";
@@ -729,4 +731,103 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
       return serveFile(file);
     });
   }
+
+  addRoute(routes, "GET", "/research/templates", "client", async () => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    const entries = new Map<string, string[]>();
+    for (const row of store.templates.listLocal()) {
+      const versions = entries.get(row.template_id) ?? [];
+      versions.push(row.version);
+      entries.set(row.template_id, versions);
+    }
+    return jsonResponse({
+      templates: [...entries.entries()].map(([id, versions]) => ({ id, versions })),
+    });
+  });
+
+  addRoute(routes, "GET", "/research/templates/:id", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    const url = new URL(ctx.request.url);
+    const version = url.searchParams.get("version") ?? undefined;
+    const found = store.templates.getTemplate(ctx.params.id, version ?? undefined);
+    if (!found) {
+      throw new ApiError(404, "template_not_found", "Research template not found", { id: ctx.params.id });
+    }
+    return jsonResponse({ doc_json: found.doc_json, version: found.version, hash: found.doc_hash });
+  });
+
+  addRoute(routes, "POST", "/research/templates/drafts", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    const body = await readJsonBody(ctx.request);
+    if (typeof body.doc_json !== "string" || !body.doc_json.trim()) {
+      throw new ApiError(422, "invalid_draft", "doc_json is required", {});
+    }
+    try {
+      const saved = store.templates.saveDraft(body.doc_json);
+      return jsonResponse(
+        { id: saved.template_id, version: saved.version, hash: saved.doc_hash },
+        201,
+      );
+    } catch (error) {
+      if (error instanceof StoreError) {
+        throw new ApiError(422, "invalid_draft", error.message, { code: error.code });
+      }
+      throw error;
+    }
+  });
+
+  addRoute(routes, "POST", "/research/templates/:id/clone", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    try {
+      const copy = store.templates.clone(ctx.params.id);
+      return jsonResponse({ id: copy.template_id, version: copy.version }, 201);
+    } catch (error) {
+      if (error instanceof StoreError) {
+        throw new ApiError(404, "template_not_found", error.message, {});
+      }
+      throw error;
+    }
+  });
+
+  addRoute(routes, "POST", "/research/templates/seed", "client", async () => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    const installed: Array<{ id: string; version: string }> = [];
+    for (const seed of SEED_TEMPLATES) {
+      const parsed = JSON.parse(seed.doc_json) as { id?: unknown; version?: unknown };
+      const existing =
+        typeof parsed.id === "string" && typeof parsed.version === "string"
+          ? store.templates.getTemplate(parsed.id, parsed.version)
+          : null;
+      if (existing) {
+        installed.push({ id: existing.template_id, version: existing.version });
+        continue;
+      }
+      const saved = store.templates.saveDraft(seed.doc_json);
+      installed.push({ id: saved.template_id, version: saved.version });
+    }
+    return jsonResponse({ installed }, 201);
+  });
+
+  addRoute(routes, "POST", "/research/projects/:id/assign", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    const body = await readJsonBody(ctx.request);
+    if (typeof body.template_ref !== "string" || !body.template_ref.includes("@")) {
+      throw new ApiError(422, "invalid_template_ref", "template_ref must look like id@version", {});
+    }
+    const [id, version] = body.template_ref.split("@");
+    if (!store.templates.getTemplate(id, version)) {
+      throw new ApiError(422, "unknown_template", "No such template version in the local library", {
+        template_ref: body.template_ref,
+      });
+    }
+    store.templates.assignLocal(ctx.params.id, body.template_ref);
+    return jsonResponse({ template_ref: body.template_ref });
+  });
 }
