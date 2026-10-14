@@ -23,7 +23,74 @@ import { useBootState } from "@/react-app/shell/boot-state";
 import { researchAsisRoute, researchPortfolioRoute } from "./research-routes";
 import { useResearchClient } from "./use-research-client";
 
-const EVIDENCE_TYPES = ["sop", "law", "form", "interview", "bpmn"];
+const EVIDENCE_TYPES = ["sop", "law", "form", "interview", "bpmn", "web"];
+
+function MarkdownComposer({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const { client } = useResearchClient();
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () =>
+      client!.uploadResearchEvidence(projectId, {
+        name: `${title.trim() || "notes"}.md`,
+        type: "sop",
+        text: body,
+      }),
+    onSuccess: () => {
+      setTitle("");
+      setBody("");
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["research", "evidence", projectId] });
+    },
+    onError: (cause) =>
+      setError(cause instanceof Error ? cause.message : "Could not save the note."),
+  });
+
+  return (
+    <Card className="mb-4">
+      <CardHeader>
+        <CardTitle>Write markdown</CardTitle>
+        <CardDescription>
+          Author a note in place. Headings become citable sections on indexing.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="md-title">Title</Label>
+          <Input
+            id="md-title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="Field visit notes"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="md-body">Markdown</Label>
+          <Textarea
+            id="md-body"
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            placeholder={"# Ward visit\n\nThree attempts, no schedule posted…"}
+            rows={10}
+            className="font-mono"
+          />
+        </div>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <div>
+          <Button
+            disabled={save.isPending || body.trim().length === 0}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? "Saving…" : "Save note"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export function ResearchEvidencePage() {
   const navigate = useNavigate();
@@ -287,6 +354,8 @@ export function ResearchEvidencePage() {
           </div>
         </CardContent>
       </Card>
+
+      <MarkdownComposer projectId={projectId} />
 
       <Card className="mb-4">
         <CardHeader>
