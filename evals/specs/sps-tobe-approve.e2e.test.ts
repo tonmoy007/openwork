@@ -76,9 +76,12 @@ test("SPS to-be gates: build variant, side-by-side, approve", async ({ world, us
   await step("approve the to-be process", async () => {
     await user.click({ role: "button", text: "Approve to-be" });
     await user.see({ text: "To-be approved" });
+    await user.see({ text: /TOBE\.bpmn/ });
+    await user.see({ text: /decisions\.xlsx/ });
+    await user.see({ text: /sha256/ });
     evidence.recordAssertionEvidence(
       "Solo approval completes the gate",
-      "The single project member approves; the phase moves on with the decision record saved.",
+      "The single project member approves; the export pack lists five hashed files with downloads.",
       true,
     );
   });

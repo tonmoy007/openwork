@@ -53,6 +53,14 @@
       "development": "./src/propose.ts",
       "default": "./src/propose.ts"
     },
+    "./cost": {
+      "types": {
+        "openwork-build": "./dist/types/src/cost.d.ts",
+        "default": "./src/cost.ts"
+      },
+      "development": "./src/cost.ts",
+      "default": "./src/cost.ts"
+    },
     "./tobe": {
       "types": {
         "openwork-build": "./dist/types/src/tobe.d.ts",
@@ -61,13 +69,29 @@
       "development": "./src/tobe.ts",
       "default": "./src/tobe.ts"
     },
-    "./cost": {
+    "./bpmn": {
       "types": {
-        "openwork-build": "./dist/types/src/cost.d.ts",
-        "default": "./src/cost.ts"
+        "openwork-build": "./dist/types/src/bpmn.d.ts",
+        "default": "./src/bpmn.ts"
       },
-      "development": "./src/cost.ts",
-      "default": "./src/cost.ts"
+      "development": "./src/bpmn.ts",
+      "default": "./src/bpmn.ts"
+    },
+    "./xlsx": {
+      "types": {
+        "openwork-build": "./dist/types/src/xlsx.d.ts",
+        "default": "./src/xlsx.ts"
+      },
+      "development": "./src/xlsx.ts",
+      "default": "./src/xlsx.ts"
+    },
+    "./report": {
+      "types": {
+        "openwork-build": "./dist/types/src/report.d.ts",
+        "default": "./src/report.ts"
+      },
+      "development": "./src/report.ts",
+      "default": "./src/report.ts"
     }
   },
   "scripts": {
@@ -77,6 +101,8 @@
   },
   "dependencies": {
     "@openwork/research-templates": "workspace:*",
+    "fast-xml-parser": "5.8.0",
+    "fflate": "0.8.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {

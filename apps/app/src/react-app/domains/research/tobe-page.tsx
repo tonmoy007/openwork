@@ -55,6 +55,34 @@ export function ResearchTobePage() {
     onSuccess: invalidate,
     onError: () => undefined,
   });
+  const approved = approve.data?.phase === "approved";
+
+  const manifest = useQuery({
+    queryKey: ["research", "export", projectId],
+    queryFn: () => client!.listExportFiles(projectId),
+    enabled: client !== null && projectId !== "" && approved,
+  });
+
+  function download(endpoint: string) {
+    if (!client) return;
+    void client
+      .downloadExportFile(projectId, endpoint)
+      .then(({ bytes, contentType, filename }) => {
+        const url = URL.createObjectURL(new Blob([bytes], { type: contentType }));
+        try {
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = filename;
+          anchor.style.display = "none";
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      })
+      .catch(() => undefined);
+  }
 
   if (status !== "ready" || tobe.isPending || processing.isPending) {
     return (
@@ -213,8 +241,41 @@ export function ResearchTobePage() {
           {approve.data?.phase === "approved" ? (
             <Alert className="mt-4">
               <AlertTitle>To-be approved</AlertTitle>
-              <AlertDescription>
-                Saved to project knowledge with the decision record. Export pack arrives next.
+              <AlertDescription className="flex flex-col gap-3">
+                <span>Saved to project knowledge with the decision record.</span>
+                {manifest.data ? (
+                  <span className="flex flex-col gap-2">
+                    {manifest.data.map((file) => (
+                      <span key={file.sha256} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{file.name}</span>
+                          <span className="block truncate font-mono text-xs text-muted-foreground">
+                            sha256 {file.sha256.slice(0, 16)}… · {file.size} bytes
+                          </span>
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            download(
+                              file.kind === "xlsx"
+                                ? "decisions.xlsx"
+                                : file.kind === "report"
+                                  ? "report.html"
+                                  : file.kind === "decision"
+                                    ? "decision.html"
+                                    : file.name.includes("-ASIS.")
+                                      ? "asis.bpmn"
+                                      : "tobe.bpmn",
+                            )
+                          }
+                        >
+                          Download
+                        </Button>
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
               </AlertDescription>
             </Alert>
           ) : null}

@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { evaluateConfirmGate } from "@openwork/process-model/gates";
 import { draftProcessModel } from "@openwork/process-model/draft";
 import { checkModelIntegrity, processModelSchema } from "@openwork/process-model/model";
 import { authorStep, decideStep, proposeAll, stepsMissingDecision } from "@openwork/process-model/propose";
 import { buildTobeVariant, tobeVariantSchema } from "@openwork/process-model/tobe";
+import { modelToXml, variantToXml } from "@openwork/process-model/bpmn";
+import { projectCosts } from "@openwork/process-model/cost";
+import { buildDecisionRecord, buildSimplificationReport } from "@openwork/process-model/report";
+import { buildDecisionWorkbook } from "@openwork/process-model/xlsx";
 import { extractClaims } from "@openwork/research-templates/claims";
 import { evaluateEvidenceGate } from "@openwork/research-templates/gates";
 import { openStore, type LocalStore } from "@openwork/research-templates/adapters/local-sqlite";
@@ -553,4 +558,175 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
     );
     return jsonResponse({ variant: found.variant, phase: "approved" });
   });
+
+  interface ExportFile {
+    name: string;
+    kind: "bpmn" | "report" | "decision" | "xlsx";
+    contentType: string;
+    bytes: Uint8Array<ArrayBuffer>;
+    sha256: string;
+  }
+
+  function freshBytes(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+    const copy = new Uint8Array(bytes.byteLength)
+    copy.set(bytes)
+    return copy
+  }
+
+  function slugify(name: string): string {
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return slug || "project";
+  }
+
+  function buildExportPack(store: LocalStore, project_id: string): { slug: string; files: ExportFile[] } {
+    const project = requireProject(store, project_id);
+    const slug = slugify(project.name);
+    const processing = readProcessing(store, project_id);
+    if (!processing) {
+      throw new ApiError(422, "no_decisions", "Decide simplifications before exporting", {});
+    }
+    const tobe = readTobe(store, project_id);
+    if (!tobe) {
+      throw new ApiError(422, "no_variant", "Build the to-be variant before exporting", {});
+    }
+    const { files } = evidenceClaims(store, project_id);
+    const claimFile = new Map<string, string>();
+    for (const file of files) {
+      for (const claim of file.claims) {
+        claimFile.set(claim.claim_id, `${file.name} p${claim.page}`);
+      }
+    }
+    const eliminated = new Set(
+      processing.model.steps
+        .filter(
+          (step) =>
+            step.simplification?.state === "accepted" && step.simplification.action === "eliminate",
+        )
+        .map((step) => step.id),
+    );
+    const costs = projectCosts(
+      processing.model.steps,
+      eliminated,
+      processing.model.steps.map((step) => step.id),
+    );
+    const reportSteps = processing.model.steps.map((step, index) => ({
+      n: index + 1,
+      label: step.label,
+      actor: step.actor,
+      decision: step.simplification
+        ? `${step.simplification.state} ${step.simplification.action}`
+        : "undecided",
+      reason: step.simplification?.reason ?? step.simplification?.proposal ?? "",
+      sources: step.claim_ids.map((id) => claimFile.get(id) ?? id),
+    }));
+    const reportInput = {
+      projectName: project.name,
+      template_ref: project.template_ref,
+      snapshot_id: tobe.snapshot.id,
+      runStamp: `snapshot ${tobe.snapshot.id}`,
+      steps: reportSteps,
+      constraints: store
+        .listConstraints(project_id)
+        .map((constraint) => ({ statement: constraint.statement, reason: constraint.reason })),
+      costs,
+    };
+    const decisionRows = [
+      ["#", "Step", "Owner", "Decision", "Reason", "Sources"],
+      ...reportSteps.map((step) => [
+        String(step.n),
+        step.label,
+        processing.model.steps[step.n - 1]?.actor ?? "",
+        step.decision,
+        step.reason,
+        step.sources.join("; "),
+      ]),
+    ];
+    const encoder = new TextEncoder();
+    const raw: Array<Omit<ExportFile, "sha256">> = [
+      {
+        name: `${slug}-TOBE.bpmn`,
+        kind: "bpmn",
+        contentType: "application/xml",
+        bytes: encoder.encode(variantToXml(tobe.variant)),
+      },
+      {
+        name: `${slug}-ASIS.bpmn`,
+        kind: "bpmn",
+        contentType: "application/xml",
+        bytes: encoder.encode(modelToXml(processing.model)),
+      },
+      {
+        name: `${slug}-report.html`,
+        kind: "report",
+        contentType: "text/html",
+        bytes: encoder.encode(buildSimplificationReport(reportInput)),
+      },
+      {
+        name: `${slug}-decision.html`,
+        kind: "decision",
+        contentType: "text/html",
+        bytes: encoder.encode(buildDecisionRecord(reportInput)),
+      },
+      {
+        name: `${slug}-decisions.xlsx`,
+        kind: "xlsx",
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        bytes: freshBytes(buildDecisionWorkbook(decisionRows)),
+      },
+    ];
+    const hashed: ExportFile[] = raw.map((file) => ({
+      ...file,
+      bytes: freshBytes(file.bytes),
+      sha256: createHash("sha256").update(file.bytes).digest("hex"),
+    }));
+    return { slug, files: hashed };
+  }
+
+  function serveFile(file: ExportFile): Response {
+    return new Response(file.bytes, {
+      status: 200,
+      headers: {
+        "Content-Type": file.contentType,
+        "Content-Disposition": `attachment; filename="${file.name}"`,
+        "X-Content-Sha256": file.sha256,
+      },
+    });
+  }
+
+  addRoute(routes, "GET", "/research/projects/:id/export", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    const pack = buildExportPack(store, ctx.params.id);
+    return jsonResponse({
+      files: pack.files.map((file) => ({
+        name: file.name,
+        kind: file.kind,
+        size: file.bytes.byteLength,
+        sha256: file.sha256,
+      })),
+    });
+  });
+
+  const exportFiles = {
+    "tobe.bpmn": (file: ExportFile) => file.kind === "bpmn" && file.name.includes("-TOBE."),
+    "asis.bpmn": (file: ExportFile) => file.kind === "bpmn" && file.name.includes("-ASIS."),
+    "report.html": (file: ExportFile) => file.kind === "report",
+    "decision.html": (file: ExportFile) => file.kind === "decision",
+    "decisions.xlsx": (file: ExportFile) => file.kind === "xlsx",
+  } as const;
+  for (const [fileName, matches] of Object.entries(exportFiles)) {
+    addRoute(routes, "GET", `/research/projects/:id/export/${fileName}`, "client", async (ctx) => {
+      ensureWritable(config);
+      const store = await storeFor(config);
+      requireProject(store, ctx.params.id);
+      const pack = buildExportPack(store, ctx.params.id);
+      const file = pack.files.find((candidate) => matches(candidate));
+      if (!file) {
+        throw new ApiError(404, "export_missing", "Export file not found", { file: fileName });
+      }
+      audit(store, ctx.params.id, ctx.actor?.clientId, "export.downloaded", [file.name], `${file.name} ${file.sha256.slice(0, 12)}`);
+      return serveFile(file);
+    });
+  }
 }

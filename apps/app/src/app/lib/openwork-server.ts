@@ -510,6 +510,14 @@ export const tobeVariantSchema = z.object({
 });
 export type TobeVariant = z.infer<typeof tobeVariantSchema>;
 
+export const exportFileSchema = z.object({
+  name: z.string(),
+  kind: z.string(),
+  size: z.number(),
+  sha256: z.string(),
+});
+export type ExportFile = z.infer<typeof exportFileSchema>;
+
 export type OpenworkSessionMessage = {
   info: Message;
   parts: Part[];
@@ -1952,6 +1960,27 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
     approveTobe: async (projectId: string): Promise<{ variant: TobeVariant; phase: string }> => {
       const body = await requestJson<{ variant: unknown; phase: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/tobe/approve`, { token, method: "POST", body: {}, timeoutMs: timeouts.activateWorkspace });
       return { variant: tobeVariantSchema.parse(body.variant), phase: z.string().parse(body.phase) };
+    },
+    listExportFiles: async (projectId: string): Promise<ExportFile[]> => {
+      const body = await requestJson<{ files: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/export`, { token, timeoutMs: timeouts.listWorkspaces });
+      return z.array(exportFileSchema).parse(body.files);
+    },
+    downloadExportFile: async (projectId: string, endpoint: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; contentType: string; filename: string }> => {
+      const response = await fetch(`${baseUrl}/research/projects/${encodeURIComponent(projectId)}/export/${endpoint}`, {
+        headers: buildHeaders(token, hostToken),
+        signal: AbortSignal.timeout(timeouts.workspaceExport),
+      });
+      if (!response.ok) {
+        throw new OpenworkServerError(response.status, "download_failed", response.statusText, null);
+      }
+      const disposition = response.headers.get("content-disposition") ?? "";
+      const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? endpoint;
+      const buffer = await response.arrayBuffer();
+      return {
+        bytes: new Uint8Array(buffer.slice(0)),
+        contentType: response.headers.get("content-type") ?? "application/octet-stream",
+        filename,
+      };
     },
     createLocalWorkspace: (payload: { folderPath: string; name: string; preset: string }) =>
       requestJson<WorkspaceList>(baseUrl, "/workspaces/local", {
