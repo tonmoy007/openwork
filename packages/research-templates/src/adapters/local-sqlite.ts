@@ -215,6 +215,17 @@ CREATE TABLE IF NOT EXISTS constraints (
   claim_ids_json TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS questions (
+  question_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  step_id TEXT,
+  question TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  answer TEXT,
+  agent TEXT,
+  created_at TEXT NOT NULL
+);
 `
 
 function now(): string {
@@ -318,6 +329,20 @@ export interface ProjectConstraint {
   created_at: string
 }
 
+export type QuestionStatus = "open" | "answered" | "skipped"
+
+export interface ResearchQuestion {
+  question_id: string
+  project_id: string
+  stage: string
+  step_id: string | null
+  question: string
+  status: QuestionStatus
+  answer: string | null
+  agent: string | null
+  created_at: string
+}
+
 export interface LocalStore {
   templates: TemplateStore
   access: AccessControl
@@ -355,6 +380,16 @@ export interface LocalStore {
     claim_ids: string[]
   }): ProjectConstraint
   listConstraints(project_id: string): ProjectConstraint[]
+  saveQuestion(input: {
+    project_id: string
+    stage: string
+    step_id?: string | null
+    question: string
+    agent?: string | null
+  }): ResearchQuestion
+  listQuestions(project_id: string, stage?: string): ResearchQuestion[]
+  answerQuestion(question_id: string, answer: string): ResearchQuestion | null
+  skipQuestion(question_id: string): boolean
   close(): void
 }
 
@@ -777,6 +812,94 @@ function buildStore(db: SqlDriver): LocalStore {
             created_at: textColumn(row, "created_at"),
           }),
         )
+    },
+    saveQuestion(input) {
+      const record: ResearchQuestion = {
+        question_id: randomUUID(),
+        project_id: input.project_id,
+        stage: input.stage,
+        step_id: input.step_id ?? null,
+        question: input.question,
+        status: "open",
+        answer: null,
+        agent: input.agent ?? null,
+        created_at: now(),
+      }
+      db.prepare(
+        "INSERT INTO questions (question_id, project_id, stage, step_id, question, status, answer, agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run(
+        record.question_id,
+        record.project_id,
+        record.stage,
+        record.step_id,
+        record.question,
+        record.status,
+        record.answer,
+        record.agent,
+        record.created_at,
+      )
+      return record
+    },
+    listQuestions(project_id, stage) {
+      const rows =
+        stage === undefined
+          ? db
+              .prepare(
+                "SELECT question_id, project_id, stage, step_id, question, status, answer, agent, created_at FROM questions WHERE project_id = ? ORDER BY rowid",
+              )
+              .all(project_id)
+          : db
+              .prepare(
+                "SELECT question_id, project_id, stage, step_id, question, status, answer, agent, created_at FROM questions WHERE project_id = ? AND stage = ? ORDER BY rowid",
+              )
+              .all(project_id, stage)
+      return rows.map(
+        (row): ResearchQuestion => ({
+          question_id: textColumn(row, "question_id"),
+          project_id: textColumn(row, "project_id"),
+          stage: textColumn(row, "stage"),
+          step_id: optionalTextColumn(row, "step_id"),
+          question: textColumn(row, "question"),
+          status:
+            textColumn(row, "status") === "answered"
+              ? "answered"
+              : textColumn(row, "status") === "skipped"
+                ? "skipped"
+                : "open",
+          answer: optionalTextColumn(row, "answer"),
+          agent: optionalTextColumn(row, "agent"),
+          created_at: textColumn(row, "created_at"),
+        }),
+      )
+    },
+    answerQuestion(question_id, answer) {
+      const updated = db
+        .prepare("UPDATE questions SET status = 'answered', answer = ? WHERE question_id = ? AND status = 'open'")
+        .run(answer, question_id)
+      if (updated.changes === 0) return null
+      const row = db
+        .prepare(
+          "SELECT question_id, project_id, stage, step_id, question, status, answer, agent, created_at FROM questions WHERE question_id = ?",
+        )
+        .get(question_id)
+      if (row === undefined || row === null) return null
+      return {
+        question_id: textColumn(row, "question_id"),
+        project_id: textColumn(row, "project_id"),
+        stage: textColumn(row, "stage"),
+        step_id: optionalTextColumn(row, "step_id"),
+        question: textColumn(row, "question"),
+        status: "answered" as const,
+        answer: optionalTextColumn(row, "answer"),
+        agent: optionalTextColumn(row, "agent"),
+        created_at: textColumn(row, "created_at"),
+      }
+    },
+    skipQuestion(question_id) {
+      const updated = db
+        .prepare("UPDATE questions SET status = 'skipped' WHERE question_id = ? AND status = 'open'")
+        .run(question_id)
+      return updated.changes > 0
     },
   }
 }

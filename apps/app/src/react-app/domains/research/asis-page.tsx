@@ -200,6 +200,7 @@ export function ResearchAsisPage() {
   const [clearingStep, setClearingStep] = useState<string | null>(null);
   const [clearReason, setClearReason] = useState("");
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const asis = useQuery({
     queryKey: ["research", "asis", projectId],
@@ -227,7 +228,38 @@ export function ResearchAsisPage() {
   const confirm = useMutation({
     mutationFn: () => client!.confirmAsis(projectId),
     onSuccess: () => {
+      setConfirmError(null);
       void queryClient.invalidateQueries({ queryKey: ["research", "asis", projectId] });
+    },
+    onError: (cause) => setConfirmError(cause instanceof Error ? cause.message : "Confirm did not finish."),
+  });
+
+  const questions = useQuery({
+    queryKey: ["research", "questions", projectId, "as_is"],
+    queryFn: () => client!.listQuestions(projectId, "as_is"),
+    enabled: client !== null && projectId !== "",
+  });
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const openQuestions = (questions.data ?? []).filter((question) => question.status === "open");
+
+  const suggest = useMutation({
+    mutationFn: () => client!.suggestQuestions(projectId, "as_is"),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["research", "questions", projectId, "as_is"] });
+    },
+  });
+  const answer = useMutation({
+    mutationFn: ({ questionId, text }: { questionId: string; text: string }) =>
+      client!.answerQuestion(projectId, questionId, text),
+    onSuccess: () => {
+      setAnswers({});
+      void queryClient.invalidateQueries({ queryKey: ["research", "questions", projectId, "as_is"] });
+    },
+  });
+  const skip = useMutation({
+    mutationFn: (questionId: string) => client!.skipQuestion(projectId, questionId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["research", "questions", projectId, "as_is"] });
     },
   });
   const clear = useMutation({
@@ -442,6 +474,58 @@ export function ResearchAsisPage() {
         </Alert>
       )}
 
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>
+            Agent questions{openQuestions.length > 0 ? ` · ${openQuestions.length} open` : ""}
+          </CardTitle>
+          <CardDescription>
+            Answer or skip each one. Confirming needs zero open questions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {openQuestions.length === 0 && (questions.data ?? []).length === 0 ? (
+            <div>
+              <Button size="sm" variant="outline" disabled={suggest.isPending} onClick={() => suggest.mutate()}>
+                {suggest.isPending ? "Asking…" : "Ask agent for gaps"}
+              </Button>
+            </div>
+          ) : null}
+          {openQuestions.map((question) => (
+            <div key={question.question_id} className="flex flex-col gap-2 rounded-md border p-3">
+              <p className="text-sm">{question.question}</p>
+              <Input
+                value={answers[question.question_id] ?? ""}
+                onChange={(event) =>
+                  setAnswers((current) => ({ ...current, [question.question_id]: event.target.value }))
+                }
+                placeholder="Type your reply…"
+                aria-label={`Reply to: ${question.question.slice(0, 60)}`}
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={answer.isPending || (answers[question.question_id] ?? "").trim().length === 0}
+                  onClick={() =>
+                    answer.mutate({ questionId: question.question_id, text: (answers[question.question_id] ?? "").trim() })
+                  }
+                >
+                  Reply
+                </Button>
+                <Button size="sm" variant="ghost" disabled={skip.isPending} onClick={() => skip.mutate(question.question_id)}>
+                  Skip
+                </Button>
+              </div>
+            </div>
+          ))}
+          {(questions.data ?? []).some((question) => question.status !== "open") ? (
+            <p className="text-xs text-muted-foreground">
+              {(questions.data ?? []).filter((question) => question.status !== "open").length} resolved.
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <div className="flex items-center justify-between gap-4">
         <Button variant="ghost" onClick={() => navigate(researchPortfolioRoute())}>
           Back to projects
@@ -459,12 +543,15 @@ export function ResearchAsisPage() {
             </AlertDescription>
           </Alert>
         ) : (
-          <Button
-            disabled={!confirmGate.ready || confirm.isPending}
-            onClick={() => confirm.mutate()}
-          >
-            {confirm.isPending ? "Confirming…" : "Confirm as-is"}
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            {confirmError ? <p className="text-sm text-destructive">{confirmError}</p> : null}
+            <Button
+              disabled={!confirmGate.ready || openQuestions.length > 0 || confirm.isPending}
+              onClick={() => confirm.mutate()}
+            >
+              {confirm.isPending ? "Confirming…" : "Confirm as-is"}
+            </Button>
+          </div>
         )}
       </div>
     </div>

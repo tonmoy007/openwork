@@ -531,6 +531,19 @@ export const templateDocSchema = z.object({
 });
 export type TemplateDoc = z.infer<typeof templateDocSchema>;
 
+export const researchQuestionSchema = z.object({
+  question_id: z.string(),
+  project_id: z.string(),
+  stage: z.string(),
+  step_id: z.string().nullable(),
+  question: z.string(),
+  status: z.enum(["open", "answered", "skipped"]),
+  answer: z.string().nullable(),
+  agent: z.string().nullable(),
+  created_at: z.string(),
+});
+export type ResearchQuestion = z.infer<typeof researchQuestionSchema>;
+
 export type OpenworkSessionMessage = {
   info: Message;
   parts: Part[];
@@ -2022,6 +2035,21 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
     },
     assignTemplate: async (projectId: string, template_ref: string): Promise<void> => {
       await requestJson<unknown>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/assign`, { token, method: "POST", body: { template_ref }, timeoutMs: timeouts.activateWorkspace });
+    },
+    listQuestions: async (projectId: string, stage?: string): Promise<ResearchQuestion[]> => {
+      const query = stage ? `?stage=${encodeURIComponent(stage)}` : "";
+      const body = await requestJson<{ questions: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/questions${query}`, { token, timeoutMs: timeouts.listWorkspaces });
+      return z.array(researchQuestionSchema).parse(body.questions);
+    },
+    suggestQuestions: async (projectId: string, stage: string): Promise<ResearchQuestion[]> => {
+      const body = await requestJson<{ questions: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/questions/suggest`, { token, method: "POST", body: { stage }, timeoutMs: timeouts.activateWorkspace });
+      return z.array(researchQuestionSchema).parse(body.questions);
+    },
+    answerQuestion: async (projectId: string, questionId: string, answer: string): Promise<void> => {
+      await requestJson<unknown>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/questions/${encodeURIComponent(questionId)}/answer`, { token, method: "POST", body: { answer }, timeoutMs: timeouts.activateWorkspace });
+    },
+    skipQuestion: async (projectId: string, questionId: string): Promise<void> => {
+      await requestJson<unknown>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/questions/${encodeURIComponent(questionId)}/skip`, { token, method: "POST", body: {}, timeoutMs: timeouts.activateWorkspace });
     },
     createLocalWorkspace: (payload: { folderPath: string; name: string; preset: string }) =>
       requestJson<WorkspaceList>(baseUrl, "/workspaces/local", {

@@ -92,6 +92,14 @@
       },
       "development": "./src/report.ts",
       "default": "./src/report.ts"
+    },
+    "./gaps": {
+      "types": {
+        "openwork-build": "./dist/types/src/gaps.d.ts",
+        "default": "./src/gaps.ts"
+      },
+      "development": "./src/gaps.ts",
+      "default": "./src/gaps.ts"
     }
   },
   "scripts": {

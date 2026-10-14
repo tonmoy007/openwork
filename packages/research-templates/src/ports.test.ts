@@ -377,3 +377,36 @@ test("members list in join order", async () => {
     store.close()
   }
 })
+
+test("questions open, answer, and skip", async () => {
+  const store = await openStore(":memory:")
+  try {
+    const project = store.createProject({
+      name: "Welfare Grant",
+      template_ref: "sps-ecrs-v1@1.0",
+      knowledge_category: "service-evidence",
+    })
+    assert.deepEqual(store.listQuestions(project.id, "as_is"), [])
+    const first = store.saveQuestion({
+      project_id: project.id,
+      stage: "as_is",
+      step_id: "step-1",
+      question: "Corroborate?",
+      agent: "heuristic-v0",
+    })
+    store.saveQuestion({ project_id: project.id, stage: "processing", question: "Other?" })
+    assert.equal(first.status, "open")
+    assert.equal(store.listQuestions(project.id, "as_is").length, 1)
+    assert.equal(store.listQuestions(project.id).length, 2)
+    const answered = store.answerQuestion(first.question_id, "Yes, ward register.")
+    assert.equal(answered?.status, "answered")
+    assert.equal(answered?.answer, "Yes, ward register.")
+    assert.equal(store.answerQuestion(first.question_id, "Again"), null)
+    const second = store.listQuestions(project.id, "processing")[0]
+    assert.equal(store.skipQuestion(second.question_id), true)
+    assert.equal(store.skipQuestion(second.question_id), false)
+    assert.ok(store.listQuestions(project.id).every((question) => question.status !== "open"))
+  } finally {
+    store.close()
+  }
+})

@@ -5,6 +5,7 @@ import { SEED_TEMPLATES } from "@openwork/research-templates/seed";
 import { evaluateConfirmGate } from "@openwork/process-model/gates";
 import { draftProcessModel } from "@openwork/process-model/draft";
 import { checkModelIntegrity, processModelSchema } from "@openwork/process-model/model";
+import { suggestGaps } from "@openwork/process-model/gaps";
 import { authorStep, decideStep, proposeAll, stepsMissingDecision } from "@openwork/process-model/propose";
 import { buildTobeVariant, tobeVariantSchema } from "@openwork/process-model/tobe";
 import { modelToXml, variantToXml } from "@openwork/process-model/bpmn";
@@ -357,6 +358,14 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
     const found = readModel(store, ctx.params.id);
     if (!found) {
       throw new ApiError(422, "no_draft", "Draft the as-is process before confirming", {});
+    }
+    const openQuestions = store
+      .listQuestions(ctx.params.id, "as_is")
+      .filter((question) => question.status === "open");
+    if (openQuestions.length > 0) {
+      throw new ApiError(422, "questions_open", "Answer or skip open questions before confirming", {
+        open: openQuestions.length,
+      });
     }
     const confirm = evaluateConfirmGate(found.model);
     if (!confirm.ready) {
@@ -750,6 +759,80 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
       },
     });
   }
+
+  addRoute(routes, "GET", "/research/projects/:id/questions", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    const url = new URL(ctx.request.url);
+    const stage = url.searchParams.get("stage") ?? undefined;
+    return jsonResponse({ questions: store.listQuestions(ctx.params.id, stage ?? undefined) });
+  });
+
+  addRoute(routes, "POST", "/research/projects/:id/questions/suggest", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    const body = await readJsonBody(ctx.request);
+    const stage = typeof body.stage === "string" && body.stage ? body.stage : "as_is";
+    const found = readModel(store, ctx.params.id);
+    if (!found) {
+      throw new ApiError(422, "no_draft", "Draft the as-is process before asking for gaps", {});
+    }
+    const { files } = evidenceClaims(store, ctx.params.id);
+    const claimsById = new Map(
+      files.flatMap((file) => file.claims.map((claim) => [claim.claim_id, claim] as const)),
+    );
+    const existing = new Set(
+      store
+        .listQuestions(ctx.params.id, stage)
+        .filter((question) => question.status === "open")
+        .map((question) => question.question),
+    );
+    const created = [];
+    for (const suggestion of suggestGaps(found.model, claimsById)) {
+      if (existing.has(suggestion.question)) continue;
+      created.push(
+        store.saveQuestion({
+          project_id: ctx.params.id,
+          stage,
+          step_id: suggestion.step_id,
+          question: suggestion.question,
+          agent: "heuristic-v0",
+        }),
+      );
+    }
+    audit(store, ctx.params.id, ctx.actor?.clientId, "asis.gaps_suggested", [], `${created.length} questions`);
+    return jsonResponse({ questions: created }, 201);
+  });
+
+  addRoute(routes, "POST", "/research/projects/:id/questions/:qid/answer", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    const body = await readJsonBody(ctx.request);
+    const answer = typeof body.answer === "string" ? body.answer.trim() : "";
+    if (!answer) {
+      throw new ApiError(422, "invalid_answer", "An answer is required", {});
+    }
+    const updated = store.answerQuestion(ctx.params.qid, answer);
+    if (!updated) {
+      throw new ApiError(404, "question_not_found", "Open question not found", { qid: ctx.params.qid });
+    }
+    audit(store, ctx.params.id, ctx.actor?.clientId, "asis.question_answered", [updated.question_id], answer.slice(0, 120));
+    return jsonResponse({ question: updated });
+  });
+
+  addRoute(routes, "POST", "/research/projects/:id/questions/:qid/skip", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    if (!store.skipQuestion(ctx.params.qid)) {
+      throw new ApiError(404, "question_not_found", "Open question not found", { qid: ctx.params.qid });
+    }
+    audit(store, ctx.params.id, ctx.actor?.clientId, "asis.question_skipped", [ctx.params.qid], "skipped");
+    return jsonResponse({ skipped: true });
+  });
 
   addRoute(routes, "GET", "/research/projects/:id/export", "client", async (ctx) => {
     ensureWritable(config);
