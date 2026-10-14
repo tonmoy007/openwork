@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { draftProcessModel } from "@openwork/process-model/draft"
 import { authorStep, decideStep, proposeAll, stepsMissingDecision } from "@openwork/process-model/propose"
+import { validateTemplate } from "@openwork/research-templates/validate"
+import { SEED_TEMPLATES } from "@openwork/research-templates/seed"
 import { checkModelIntegrity, processModelSchema } from "@openwork/process-model/model"
 import { extractClaims } from "@openwork/research-templates/claims"
 import type { Claim } from "@openwork/research-templates/ports"
@@ -81,14 +83,6 @@ test("proposeAll never overwrites existing decisions", () => {
   assert.equal(twice.steps[0].simplification?.state, "accepted")
 })
 
-test("claims map carries the tags the heuristic reads", () => {
-  const claims: Claim[] = extractClaims("sop", TEXT, "sop")
-  const tags = new Set(claims.flatMap((claim) => claim.tags))
-  assert.ok(tags.has("duplication") || tags.has("registry"))
-  assert.ok(tags.has("travel"))
-  assert.ok(tags.has("legal"))
-})
-
 test("authorStep creates decisions for heuristic-missed steps", () => {
   const { model, byId } = input()
   void byId
@@ -113,4 +107,34 @@ test("authorStep creates decisions for heuristic-missed steps", () => {
     decided_by: "sara",
   })
   assert.equal(repeat.steps[0].simplification?.proposal, "Rewrite in Bengali.")
+})
+
+test("claims map carries the tags heuristics read", () => {
+  const claims: Claim[] = extractClaims("sop", TEXT, "sop")
+  const tags = new Set(claims.flatMap((claim) => claim.tags))
+  assert.ok(tags.has("duplication") || tags.has("registry"))
+  assert.ok(tags.has("travel"))
+  assert.ok(tags.has("legal"))
+})
+
+test("lean template validates and proposes through match tags", () => {
+  const seed = SEED_TEMPLATES.find((entry) => entry.id === "sps-lean-waste-v1")
+  assert.ok(seed)
+  const parsed = validateTemplate(JSON.parse(seed.doc_json))
+  assert.equal(parsed.ok, true, JSON.stringify(parsed.issues))
+  const criteria = parsed.template?.simplification.criteria ?? []
+  assert.equal(criteria.length, 5)
+
+  const claims = extractClaims("sop", TEXT, "sop")
+  const byId = new Map(claims.map((claim) => [claim.claim_id, claim]))
+  const draft = draftProcessModel({
+    stage: "as_is",
+    files: [{ file_id: "sop", order: 0 }],
+    claims,
+  })
+  const proposed = proposeAll({ ...draft, stage: "processing" }, byId, criteria)
+  const ward = proposed.steps.find((step) => step.label.includes("Ward Office"))
+  assert.equal(ward?.simplification?.criterion_id, "overprocessing")
+  assert.equal(ward?.simplification?.action, "eliminate")
+  assert.ok((ward?.simplification?.reason ?? "").includes("heuristic"))
 })

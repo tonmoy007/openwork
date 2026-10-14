@@ -74,6 +74,14 @@ const criterionSchema = z.object({
   label: z.string().min(1),
   evaluation_prompt: promptRefSchema,
   needs_constraint: z.boolean(),
+  heuristic: z
+    .object({
+      match_tags: z.array(z.string().min(1)).min(1),
+      action: z.string().min(1),
+      proposal: z.string().min(1),
+      reason: z.string().min(1),
+    })
+    .optional(),
 })
 
 const simplificationSchema = z.object({

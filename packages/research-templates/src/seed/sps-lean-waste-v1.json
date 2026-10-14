@@ -1,0 +1,114 @@
+{
+  "id": "sps-lean-waste-v1",
+  "version": "1.0",
+  "knowledge_sections": [
+    { "key": "sop", "evidence_types": ["sop", "bpmn"], "extract": "extract-steps" },
+    { "key": "legal", "evidence_types": ["law"], "extract": "extract-constraints" },
+    { "key": "experience", "evidence_types": ["interview", "survey"], "extract": "extract-pains" }
+  ],
+  "as_is": {
+    "step_fields": ["actor", "time", "cost", "visits"],
+    "pain_dimensions": ["waiting", "rework", "overprocessing", "motion", "language", "exclusion"],
+    "gap_loop": { "max_rounds": 5, "confirm_gate": "user_accept", "question_policy": "one_at_a_time" }
+  },
+  "simplification": {
+    "constraint_capture": { "prompt": "extract-constraints", "save_to": "project.knowledge.constraints" },
+    "criteria": [
+      {
+        "id": "waiting",
+        "label": "Waiting — remove idle time",
+        "evaluation_prompt": "propose-criterion",
+        "needs_constraint": false,
+        "heuristic": {
+          "match_tags": ["delay"],
+          "action": "eliminate",
+          "proposal": "Remove the waiting step with advance notice.",
+          "reason": "Idle time with no legal basis"
+        }
+      },
+      {
+        "id": "rework",
+        "label": "Rework — stop doing it twice",
+        "evaluation_prompt": "propose-criterion",
+        "needs_constraint": false,
+        "heuristic": {
+          "match_tags": ["rework"],
+          "action": "eliminate",
+          "proposal": "Remove rework with a first-time-right check.",
+          "reason": "Repeat work caused by missing guidance"
+        }
+      },
+      {
+        "id": "overprocessing",
+        "label": "Overprocessing — stop duplicating data",
+        "evaluation_prompt": "propose-criterion",
+        "needs_constraint": true,
+        "heuristic": {
+          "match_tags": ["duplication", "registry"],
+          "action": "eliminate",
+          "proposal": "Reuse the registry record instead of re-collecting.",
+          "reason": "Duplicates data the government already holds"
+        }
+      },
+      {
+        "id": "motion",
+        "label": "Motion — stop moving people",
+        "evaluation_prompt": "propose-criterion",
+        "needs_constraint": false,
+        "heuristic": {
+          "match_tags": ["travel"],
+          "action": "eliminate",
+          "proposal": "Replace the trip with a closer submission point.",
+          "reason": "Travel with no legal requirement"
+        }
+      },
+      {
+        "id": "language",
+        "label": "Language — write so people understand",
+        "evaluation_prompt": "propose-criterion",
+        "needs_constraint": false,
+        "heuristic": {
+          "match_tags": ["language_access"],
+          "action": "simplify",
+          "proposal": "Rewrite in the claimant's language at half the length.",
+          "reason": "Language barrier excludes claimants"
+        }
+      }
+    ],
+    "decision_states": ["proposed", "accepted", "rejected", "revised"],
+    "back_edges": ["to_as_is", "to_constraint"]
+  },
+  "cost_model": {
+    "measures": ["visits", "time_to_decision", "out_of_pocket", "steps"],
+    "formulas": {
+      "visits_saved": "sum(as_is.visits) - sum(tobe.visits)",
+      "visits_saved_pct": "pct(sum(as_is.visits), sum(tobe.visits))"
+    },
+    "units": { "currency": "taka", "time": "days" }
+  },
+  "tobe": { "policy": "single", "axes": ["cheapest"], "side_by_side": true },
+  "outputs": ["table", "bpmn_svg", "bpmn_xml", "impact_cards", "report_html", "decision_html", "table_xlsx", "decision_record"],
+  "agents": {
+    "definitions": [
+      { "id": "asis-miner", "role": "As-is step extractor", "prompt_ref": "extract-steps", "model_pin": "default", "capabilities": ["step_extraction"], "strength_sections": ["sop", "bpmn"], "fallback": "gap-asker", "cost": 1, "latency": 1 },
+      { "id": "legal-miner", "role": "Legal constraint miner", "prompt_ref": "extract-constraints", "model_pin": "default", "capabilities": ["legal_grounding"], "strength_sections": ["law"], "fallback": "gap-asker", "cost": 1, "latency": 1 },
+      { "id": "experience-miner", "role": "Citizen experience miner", "prompt_ref": "extract-pains", "model_pin": "default", "capabilities": ["pain_finding"], "strength_sections": ["interview", "survey"], "fallback": "gap-asker", "cost": 1, "latency": 1 },
+      { "id": "gap-asker", "role": "Gap question asker", "prompt_ref": "gap-question", "model_pin": "default", "capabilities": ["gap_clarification"], "strength_sections": ["sop", "interview"], "fallback": "asis-miner", "cost": 1, "latency": 2 },
+      { "id": "lean-proposer", "role": "Waste proposer", "prompt_ref": "propose-criterion", "model_pin": "default", "capabilities": ["waste_analysis"], "strength_sections": ["sop", "interview"], "fallback": "gap-asker", "cost": 2, "latency": 2 },
+      { "id": "tobe-analyst", "role": "To-be variant analyst", "prompt_ref": "propose-criterion", "model_pin": "default", "capabilities": ["variant_design", "cost_reasoning"], "strength_sections": ["sop", "law"], "fallback": "gap-asker", "cost": 3, "latency": 4 },
+      { "id": "updater", "role": "Model updater (applies, never proposes)", "prompt_ref": "extract-steps", "model_pin": "default", "capabilities": ["model_apply"], "strength_sections": ["sop"], "fallback": "asis-miner", "cost": 1, "latency": 1 }
+    ],
+    "routing": {
+      "mode": "auto_with_override",
+      "decision_model": "tie-break-judge",
+      "tie_break_margin": 0.03,
+      "preset": "balanced",
+      "weights": { "capability": 0.35, "evidence": 0.25, "quality": 0.2, "cost": 0.1, "latency": 0.1 }
+    },
+    "fan_out": [
+      { "scope": "per_section", "task": "extract", "concurrency_cap": 2 },
+      { "scope": "per_step", "task": "propose", "concurrency_cap": 2 }
+    ],
+    "funnel": { "conflict": "evidence_recency_plus_legal_priority", "quorum": "single_reviewer_accept", "provenance_required": true }
+  }
+}

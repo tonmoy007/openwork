@@ -21,12 +21,45 @@ function hasAny(tags: Set<string>, wanted: string[]): boolean {
   return wanted.some((tag) => tags.has(tag))
 }
 
+export interface HeuristicCriterion {
+  id: string
+  label: string
+  heuristic?: {
+    match_tags: string[]
+    action: string
+    proposal: string
+    reason: string
+  }
+}
+
 export function proposeForStep(
   step: ProcessStep,
   claimsById: Map<string, Claim>,
+  criteria: HeuristicCriterion[] = [],
 ): Omit<StepSimplification, "state" | "revised_from" | "decided_by"> | null {
   if (step.simplification) return null
   const tags = stepTags(step, claimsById)
+  for (const criterion of criteria) {
+    const matchTags = criterion.heuristic?.match_tags ?? []
+    if (matchTags.length > 0 && hasAny(tags, matchTags)) {
+      const heuristic = criterion.heuristic as { action: string; proposal: string; reason: string }
+      return {
+        criterion_id: criterion.id,
+        action: heuristic.action,
+        proposal: heuristic.proposal,
+        reason: `${heuristic.reason} (heuristic).`,
+        claim_ids: step.claim_ids,
+      }
+    }
+  }
+  if (criteria.some((criterion) => criterion.heuristic)) return null
+  return proposeEcrs(step, tags)
+}
+
+function proposeEcrs(
+  step: ProcessStep,
+  tags: Set<string>,
+): Omit<StepSimplification, "state" | "revised_from" | "decided_by"> | null {
   if (step.actor === "Officer" && hasAny(tags, ["legal"])) {
     return {
       criterion_id: "keep",
@@ -69,11 +102,12 @@ export function proposeForStep(
 export function proposeAll(
   model: ProcessModel,
   claimsById: Map<string, Claim>,
+  criteria: HeuristicCriterion[] = [],
 ): ProcessModel {
   return {
     ...model,
     steps: model.steps.map((step) => {
-      const proposal = proposeForStep(step, claimsById)
+      const proposal = proposeForStep(step, claimsById, criteria)
       if (!proposal) return step
       return {
         ...step,
