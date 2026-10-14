@@ -50,6 +50,8 @@ import {
 import { OpenworkContextPublisher } from "./openwork-context-publisher";
 import { SessionRoute } from "./session-route";
 import { ResearchEvidencePage } from "../domains/research/evidence-page";
+import { KnowledgeDetailPage } from "../domains/research/knowledge-detail-page";
+import { ResearchKnowledgePage } from "../domains/research/knowledge-page";
 import { ResearchSimplifyPage } from "../domains/research/simplify-page";
 import { ResearchTemplateEditorPage } from "../domains/research/template-editor-page";
 import { ResearchTemplatesPage } from "../domains/research/templates-page";
@@ -531,6 +533,8 @@ export function AppRoot() {
               <Route path="/research/:projectId/tobe" element={<DevProfiler id="ResearchTobeRoute"><ResearchTobePage /></DevProfiler>} />
               <Route path="/research/templates" element={<DevProfiler id="ResearchTemplatesRoute"><ResearchTemplatesPage /></DevProfiler>} />
               <Route path="/research/templates/:templateId/edit" element={<DevProfiler id="ResearchTemplateEditorRoute"><ResearchTemplateEditorPage /></DevProfiler>} />
+              <Route path="/research/knowledge" element={<DevProfiler id="ResearchKnowledgeRoute"><ResearchKnowledgePage /></DevProfiler>} />
+              <Route path="/research/knowledge/:kbId" element={<DevProfiler id="ResearchKnowledgeDetailRoute"><KnowledgeDetailPage /></DevProfiler>} />
               <Route path="/activity" element={<DevProfiler id="ActivityRoute"><SessionRoute /></DevProfiler>} />
               <Route path="/apps" element={<DevProfiler id="AppsRoute"><SessionRoute /></DevProfiler>} />
               <Route path="/dashboard/apps/:appId" element={<DevProfiler id="DashboardAppRoute"><SessionRoute /></DevProfiler>} />

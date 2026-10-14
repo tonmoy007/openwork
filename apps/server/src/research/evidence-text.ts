@@ -1,12 +1,8 @@
 /**
- * Binary evidence extraction. PDF via the repo's pdfium path, DOCX via
- * @openwork/workbook, BPMN as text plus per-task claims so diagram steps
- * enter the draft through the normal claims pipeline. Anything unparseable
- * throws with a researcher-word message; the route stores a failed record
- * for triage.
+ * Binary evidence extraction. Heavy binary deps (pdfium, workbook) load
+ * lazily inside each branch so a missing binary breaks one upload with a
+ * researcher-word 422 — never server boot. Pure helpers stay static.
  */
-import { withPdfDocument } from "../pdf-attachments/pdfium.js";
-import { extractOfficeText } from "@openwork/workbook";
 import { xmlToModel } from "@openwork/process-model/bpmn";
 
 export type BinaryKind = "pdf" | "docx" | "bpmn" | "text";
@@ -38,6 +34,7 @@ export async function extractEvidenceText(
   }
   if (kind === "docx") {
     try {
+      const { extractOfficeText } = await import("@openwork/workbook");
       return { text: await extractOfficeText("docx", bytes), taskLabels: [] };
     } catch {
       throw new Error(`${name} is not a readable Word document.`);
@@ -57,6 +54,12 @@ export async function extractEvidenceText(
 }
 
 async function extractPdfText(name: string, bytes: Uint8Array): Promise<string> {
+  let withPdfDocument: (bytes: Uint8Array, work: (document: PdfDocument) => Promise<string>) => Promise<string>;
+  try {
+    ;({ withPdfDocument } = await import("../pdf-attachments/pdfium.js"));
+  } catch {
+    throw new Error(`${name} needs the PDF reader, which is unavailable in this runtime.`);
+  }
   try {
     return await withPdfDocument(bytes, async (document) => {
       const pages: string[] = [];
@@ -73,4 +76,9 @@ async function extractPdfText(name: string, bytes: Uint8Array): Promise<string> 
     if (error instanceof Error && error.message.includes("readable text")) throw error;
     throw new Error(`${name} is not a readable PDF.`);
   }
+}
+
+interface PdfDocument {
+  info: { pageCount: number };
+  pageText(page: number): string;
 }

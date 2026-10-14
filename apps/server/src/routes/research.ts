@@ -102,10 +102,123 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
     return jsonResponse({ files, gate: evaluateEvidenceGate(files) });
   });
 
+  async function parseMultipart(request: Request): Promise<FormData> {
+    try {
+      return await request.formData();
+    } catch {
+      throw new ApiError(400, "invalid_payload", "Malformed multipart/form-data", {});
+    }
+  }
+
+  function formText(form: FormData, key: string): string {
+    const value = form.get(key);
+    return typeof value === "string" ? value : "";
+  }
+
+  async function indexFile(
+    store: LocalStore,
+    project_id: string,
+    kb_id: string,
+    name: string,
+    type: string,
+    bytes: Uint8Array,
+    text: string | null,
+  ): Promise<{ file_id: string; status: "indexed" | "failed"; reason?: string }> {
+    const file_id = randomUUID();
+    const saveFailed = (reason: string) => {
+      store.saveEvidence({
+        file_id,
+        project_id,
+        name,
+        type,
+        size: bytes.byteLength,
+        status: "failed",
+        claims: [],
+        kb_id,
+      });
+      return { file_id, status: "failed" as const, reason };
+    };
+    if (bytes.byteLength === 0 && !text) return saveFailed("The file arrived empty.");
+    if (bytes.byteLength > MAX_EVIDENCE_TEXT_BYTES) {
+      return saveFailed("Files larger than 5 MB are not supported yet.");
+    }
+    if (text !== null) {
+      const claims = extractClaims(file_id, text, type);
+      store.saveEvidence({
+        file_id,
+        project_id,
+        name,
+        type,
+        size: bytes.byteLength,
+        status: "indexed",
+        claims,
+        kb_id,
+      });
+      return { file_id, status: "indexed" as const };
+    }
+    let extracted: { text: string; taskLabels: string[] };
+    try {
+      extracted = await extractEvidenceText(name, type, bytes);
+    } catch (error) {
+      return saveFailed(error instanceof Error ? error.message : "The file could not be read.");
+    }
+    const claims = [
+      ...extractClaims(file_id, extracted.text, type),
+      ...bpmnTaskClaims(file_id, extracted.taskLabels),
+    ];
+    if (claims.length === 0) {
+      return saveFailed("The file indexed but yielded no readable sections.");
+    }
+    store.saveEvidence({
+      file_id,
+      project_id,
+      name,
+      type,
+      size: bytes.byteLength,
+      status: "indexed",
+      claims,
+      kb_id,
+    });
+    return { file_id, status: "indexed" as const };
+  }
+
   addRoute(routes, "POST", "/research/projects/:id/evidence", "client", async (ctx) => {
     ensureWritable(config);
     const store = await storeFor(config);
     requireProject(store, ctx.params.id);
+    const contentType = ctx.request.headers.get("content-type") ?? "";
+    const kb_id = ownedKB(store, ctx.params.id);
+    if (contentType.toLowerCase().includes("multipart/form-data")) {
+      const form = await parseMultipart(ctx.request);
+      const upload = form.get("file");
+      const type = formText(form, "type") || "sop";
+      const filename =
+        typeof upload !== "string" && upload && typeof upload.name === "string" && upload.name
+          ? upload.name
+          : formText(form, "name") || "upload";
+      const pasted = formText(form, "text");
+      if (pasted) {
+        const bytes = new TextEncoder().encode(pasted);
+        const result = await indexFile(store, ctx.params.id, kb_id, filename, type, bytes, pasted);
+        if (result.status === "failed") {
+          throw new ApiError(422, "evidence_failed", result.reason ?? "Upload did not finish", {});
+        }
+        const files = store.getEvidence(ctx.params.id);
+        const file = files.find((entry) => entry.file_id === result.file_id);
+        return jsonResponse({ file, gate: evaluateEvidenceGate(files) }, 201);
+      }
+      if (typeof upload === "string" || !upload) {
+        throw new ApiError(422, "invalid_evidence", "A file or pasted text is required", {});
+      }
+      const bytes = new Uint8Array(await upload.arrayBuffer());
+      const result = await indexFile(store, ctx.params.id, kb_id, filename, type, bytes, null);
+      if (result.status === "failed") {
+        throw new ApiError(422, "evidence_failed", result.reason ?? "Upload did not finish", {});
+      }
+      const files = store.getEvidence(ctx.params.id);
+      const file = files.find((entry) => entry.file_id === result.file_id);
+      return jsonResponse({ file, gate: evaluateEvidenceGate(files) }, 201);
+    }
     const body = await readJsonBody(ctx.request);
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const type = typeof body.type === "string" ? body.type : "sop";
@@ -114,77 +227,37 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
     if (!name || (!textInput && !dataBase64)) {
       throw new ApiError(422, "invalid_evidence", "name and text or file bytes are required", {});
     }
-    const file_id = randomUUID();
-    if (textInput && Buffer.byteLength(textInput, "utf8") > MAX_EVIDENCE_TEXT_BYTES) {
-      throw new ApiError(413, "evidence_too_large", "Evidence text exceeds 5 MB", {});
-    }
-    const fail = (reason: string, status = 422): never => {
-      store.saveEvidence({
-        file_id,
-        project_id: ctx.params.id,
-        name,
-        type,
-        size: 0,
-        status: "failed",
-        claims: [],
-      });
-      throw new ApiError(status, "evidence_failed", reason, {});
-    };
     if (textInput) {
-      const claims = extractClaims(file_id, textInput, type);
-      const file = store.saveEvidence({
-        file_id,
-        project_id: ctx.params.id,
-        name,
-        type,
-        size: Buffer.byteLength(textInput, "utf8"),
-        status: "indexed",
-        claims,
-      });
-      return jsonResponse(
-        { file, gate: evaluateEvidenceGate(store.getEvidence(ctx.params.id)) },
-        201,
-      );
+      if (Buffer.byteLength(textInput, "utf8") > MAX_EVIDENCE_TEXT_BYTES) {
+        throw new ApiError(413, "evidence_too_large", "Evidence text exceeds 5 MB", {});
+      }
+      const bytes = new TextEncoder().encode(textInput);
+      const result = await indexFile(store, ctx.params.id, kb_id, name, type, bytes, textInput);
+      const files = store.getEvidence(ctx.params.id);
+      const file = files.find((entry) => entry.file_id === result.file_id);
+      return jsonResponse({ file, gate: evaluateEvidenceGate(files) }, 201);
     }
     let bytes: Uint8Array;
     try {
       const raw = Buffer.from(dataBase64, "base64");
-      if (raw.byteLength === 0) return fail("The file arrived empty.");
-      if (raw.byteLength > MAX_EVIDENCE_TEXT_BYTES) {
-        return fail("Files larger than 5 MB are not supported yet.", 413);
+      if (raw.byteLength === 0) {
+        throw new ApiError(422, "invalid_evidence", "The file arrived empty.", {});
       }
       const copy = new Uint8Array(raw.byteLength);
       copy.set(raw);
       bytes = copy;
     } catch {
-      return fail("The file bytes are not valid base64.");
+      throw new ApiError(422, "invalid_evidence", "The file bytes are not valid base64.", {});
     }
-    let extracted: { text: string; taskLabels: string[] };
-    try {
-      extracted = await extractEvidenceText(name, type, bytes);
-    } catch (error) {
-      return fail(error instanceof Error ? error.message : "The file could not be read.");
+    const result = await indexFile(store, ctx.params.id, kb_id, name, type, bytes, null);
+    if (result.status === "failed") {
+      const files = store.getEvidence(ctx.params.id);
+      const file = files.find((entry) => entry.file_id === result.file_id);
+      throw new ApiError(422, "evidence_failed", "Upload did not finish", { file });
     }
-    const claims = [
-      ...extractClaims(file_id, extracted.text, type),
-      ...bpmnTaskClaims(file_id, extracted.taskLabels),
-    ];
-    if (claims.length === 0) {
-      return fail("The file indexed but yielded no readable sections.");
-    }
-    const file = store.saveEvidence({
-      file_id,
-      project_id: ctx.params.id,
-      name,
-      type,
-      size: bytes.byteLength,
-      status: "indexed",
-      claims,
-    });
-    return jsonResponse(
-      { file, gate: evaluateEvidenceGate(store.getEvidence(ctx.params.id)) },
-      201,
-    );
+    const files = store.getEvidence(ctx.params.id);
+    const file = files.find((entry) => entry.file_id === result.file_id);
+    return jsonResponse({ file, gate: evaluateEvidenceGate(files) }, 201);
   });
 
   addRoute(routes, "GET", "/research/projects/:id/gates", "client", async (ctx) => {
@@ -200,6 +273,21 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
       throw new ApiError(404, "project_not_found", "Research project not found", { id });
     }
     return project;
+  }
+
+  function ownedKB(store: LocalStore, project_id: string): string {
+    const existing = store
+      .attachedKBs(project_id)
+      .find((kb) => kb.owner_project_id === project_id && kb.name === "Project files");
+    if (existing) return existing.id;
+    const kb = store.createKB({
+      name: "Project files",
+      category: "service-evidence",
+      scope: "project",
+      owner_project_id: project_id,
+    });
+    store.attachKB(project_id, kb.id);
+    return kb.id;
   }
 
   function readModel(store: LocalStore, project_id: string) {
@@ -834,6 +922,160 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
     return jsonResponse({ skipped: true });
   });
 
+  addRoute(routes, "GET", "/research/knowledge", "client", async () => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    return jsonResponse({ knowledge: store.listKBs() });
+  });
+
+  addRoute(routes, "POST", "/research/knowledge", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    const body = await readJsonBody(ctx.request);
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const category = typeof body.category === "string" && body.category ? body.category : "service-evidence";
+    const scope = body.scope === "global" ? "global" : "project";
+    if (!name) {
+      throw new ApiError(422, "invalid_kb", "A knowledge base name is required", {});
+    }
+    const kb = store.createKB({ name, category, scope });
+    return jsonResponse({ kb }, 201);
+  });
+
+  addRoute(routes, "GET", "/research/knowledge/:kbId/files", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    if (!store.getKB(ctx.params.kbId)) {
+      throw new ApiError(404, "kb_not_found", "Knowledge base not found", { id: ctx.params.kbId });
+    }
+    return jsonResponse({ files: store.getKBFiles(ctx.params.kbId) });
+  });
+
+  addRoute(routes, "POST", "/research/knowledge/:kbId/evidence", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    const kb = store.getKB(ctx.params.kbId);
+    if (!kb) {
+      throw new ApiError(404, "kb_not_found", "Knowledge base not found", { id: ctx.params.kbId });
+    }
+    const contentType = ctx.request.headers.get("content-type") ?? "";
+    let name = "";
+    let type = "sop";
+    let bytes: Uint8Array | null = null;
+    let text: string | null = null;
+    if (contentType.toLowerCase().includes("multipart/form-data")) {
+      const form = await parseMultipart(ctx.request);
+      const upload = form.get("file");
+      type = formText(form, "type") || "sop";
+      name =
+        typeof upload !== "string" && upload && typeof upload.name === "string" && upload.name
+          ? upload.name
+          : formText(form, "name") || "upload";
+      const pasted = formText(form, "text");
+      if (pasted) {
+        text = pasted;
+        bytes = new TextEncoder().encode(pasted);
+      } else if (typeof upload === "string" || !upload) {
+        throw new ApiError(422, "invalid_evidence", "A file or pasted text is required", {});
+      } else {
+        bytes = new Uint8Array(await upload.arrayBuffer());
+      }
+    } else {
+      const body = await readJsonBody(ctx.request);
+      name = typeof body.name === "string" ? body.name.trim() : "";
+      type = typeof body.type === "string" ? body.type : "sop";
+      if (typeof body.text === "string" && body.text) {
+        text = body.text;
+        bytes = new TextEncoder().encode(body.text);
+      } else if (typeof body.dataBase64 === "string" && body.dataBase64) {
+        const raw = Buffer.from(body.dataBase64, "base64");
+        const copy = new Uint8Array(raw.byteLength);
+        copy.set(raw);
+        bytes = copy;
+      } else {
+        throw new ApiError(422, "invalid_evidence", "name and text or file bytes are required", {});
+      }
+    }
+    if (!name) {
+      throw new ApiError(422, "invalid_evidence", "A file name is required", {});
+    }
+    const result = await indexFile(store, kb.owner_project_id ?? "", kb.id, name, type, bytes, text);
+    if (result.status === "failed") {
+      throw new ApiError(422, "evidence_failed", result.reason ?? "Upload did not finish", {});
+    }
+    const file = store.getKBFiles(kb.id).find((entry) => entry.file_id === result.file_id);
+    return jsonResponse({ file }, 201);
+  });
+
+  addRoute(routes, "POST", "/research/knowledge/:kbId/web-capture", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    const kb = store.getKB(ctx.params.kbId);
+    if (!kb) {
+      throw new ApiError(404, "kb_not_found", "Knowledge base not found", { id: ctx.params.kbId });
+    }
+    const body = await readJsonBody(ctx.request);
+    const url = typeof body.url === "string" ? body.url.trim() : "";
+    const text = typeof body.text === "string" ? body.text : "";
+    const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : url;
+    const query = typeof body.query === "string" ? body.query.trim() : "";
+    if (!/^https?:\/\/[^/\s]+\.[^/\s]+/.test(url)) {
+      throw new ApiError(422, "invalid_url", "A public http(s) URL is required", {});
+    }
+    if (!text.trim()) {
+      throw new ApiError(422, "invalid_evidence", "Captured text is required alongside the URL", {});
+    }
+    const retrieved_at = new Date().toISOString();
+    const header = `${title}\nSource: ${url}\nRetrieved: ${retrieved_at}${query ? `\nQuery: ${query}` : ""}\n\n`;
+    const file_id = randomUUID();
+    const claims = extractClaims(file_id, header + text, "web");
+    if (claims.length === 0) {
+      throw new ApiError(422, "evidence_failed", "The captured text yielded no readable sections.", {});
+    }
+    const file = store.saveEvidence({
+      file_id,
+      project_id: kb.owner_project_id ?? "",
+      name: title.slice(0, 120),
+      type: "web",
+      size: Buffer.byteLength(text, "utf8"),
+      status: "indexed",
+      claims,
+      kb_id: kb.id,
+      source_url: url,
+      retrieved_at,
+    });
+    audit(store, kb.owner_project_id ?? "", ctx.actor?.clientId, "kb.web_captured", [file_id], url.slice(0, 120));
+    return jsonResponse({ file }, 201);
+  });
+
+  addRoute(routes, "GET", "/research/projects/:id/knowledge", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    return jsonResponse({ knowledge: store.attachedKBs(ctx.params.id) });
+  });
+
+  addRoute(routes, "POST", "/research/projects/:id/knowledge/attach", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    const body = await readJsonBody(ctx.request);
+    const kb_id = typeof body.kb_id === "string" ? body.kb_id : "";
+    if (!kb_id || !store.getKB(kb_id)) {
+      throw new ApiError(422, "unknown_kb", "No such knowledge base in the local library", { kb_id });
+    }
+    store.attachKB(ctx.params.id, kb_id);
+    return jsonResponse({ attached: store.attachedKBs(ctx.params.id) });
+  });
+
+  addRoute(routes, "DELETE", "/research/projects/:id/knowledge/:kbId", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
+    store.detachKB(ctx.params.id, ctx.params.kbId);
+    return jsonResponse({ attached: store.attachedKBs(ctx.params.id) });
+  });
+
   addRoute(routes, "GET", "/research/projects/:id/export", "client", async (ctx) => {
     ensureWritable(config);
     const store = await storeFor(config);
@@ -950,6 +1192,50 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
       installed.push({ id: saved.template_id, version: saved.version });
     }
     return jsonResponse({ installed }, 201);
+  });
+
+  addRoute(routes, "POST", "/research/projects/from-brief", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    const body = await readJsonBody(ctx.request);
+    const brief = typeof body.brief === "string" ? body.brief : "";
+    const lines = brief
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length === 0) {
+      throw new ApiError(422, "invalid_brief", "A brief with at least a service name is required", {});
+    }
+    const assumptions: string[] = [];
+    const lower = brief.toLowerCase();
+    const pickTemplate = (): string => {
+      const match = /template:\s*([a-z0-9-]+@[0-9.]+)/i.exec(brief);
+      if (match && store.templates.getTemplate(match[1].split("@")[0], match[1].split("@")[1])) {
+        return match[1];
+      }
+      const latest = store.templates.listLocal().at(-1);
+      if (latest) return `${latest.template_id}@${latest.version}`;
+      assumptions.push("No template named; defaulted to sps-ecrs-v1@1.0.");
+      return "sps-ecrs-v1@1.0";
+    };
+    const pickCategory = (): string => {
+      if (lower.includes("global standard")) return "global-standards";
+      if (lower.includes("local")) return "local-sops";
+      return "service-evidence";
+    };
+    const project = store.createProject({
+      name: lines[0].slice(0, 120),
+      description: lines.slice(1).join("\n").slice(0, 2000),
+      template_ref: pickTemplate(),
+      knowledge_category: pickCategory(),
+    });
+    store.addMember({
+      project_id: project.id,
+      user_ref: ctx.actor?.clientId ?? "local",
+      local_role: "researcher",
+    });
+    ownedKB(store, project.id);
+    return jsonResponse({ project, assumptions }, 201);
   });
 
   addRoute(routes, "POST", "/research/projects/:id/assign", "client", async (ctx) => {

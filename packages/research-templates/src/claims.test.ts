@@ -92,6 +92,9 @@ test("evidence gate opens only when all files are indexed with claims", () => {
     size: file.text.length,
     status: "indexed",
     claims: extractClaims(`file-${index}`, file.text, "test"),
+    kb_id: null,
+    source_url: null,
+    retrieved_at: null,
   }))
   const open = evaluateEvidenceGate(ready)
   assert.equal(open.ready, true)

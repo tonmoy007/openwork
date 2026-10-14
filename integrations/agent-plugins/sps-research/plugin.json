@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "sps-research",
+  "version": "1.0.0",
+  "description": "Run template-driven simplification research against a local OpenWork server: projects, knowledge bases, evidence, gates, and exports.",
+  "author": {
+    "name": "OpenWork",
+    "url": "https://openworklabs.com"
+  },
+  "homepage": "https://github.com/different-ai/openwork",
+  "repository": "https://github.com/different-ai/openwork",
+  "license": "MIT",
+  "keywords": [
+    "openwork",
+    "research",
+    "simplification",
+    "agent-skills",
+    "local"
+  ]
+}

@@ -42,6 +42,17 @@ export function ResearchEvidencePage() {
     queryFn: () => client!.getResearchEvidence(projectId),
     enabled: client !== null && projectId !== "",
   });
+  const attached = useQuery({
+    queryKey: ["research", "attached", projectId],
+    queryFn: () => client!.attachedKBs(projectId),
+    enabled: client !== null && projectId !== "",
+  });
+  const library = useQuery({
+    queryKey: ["research", "knowledge"],
+    queryFn: () => client!.listKBs(),
+    enabled: client !== null,
+  });
+  const [attachId, setAttachId] = useState("");
   const { markRouteReady } = useBootState();
 
   useEffect(() => {
@@ -98,6 +109,22 @@ export function ResearchEvidencePage() {
     }
   }
 
+  const attach = useMutation({
+    mutationFn: (kb_id: string) => client!.attachKB(projectId, kb_id),
+    onSuccess: () => {
+      setAttachId("");
+      void queryClient.invalidateQueries({ queryKey: ["research", "attached", projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["research", "evidence", projectId] });
+    },
+  });
+  const detach = useMutation({
+    mutationFn: (kb_id: string) => client!.detachKB(projectId, kb_id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["research", "attached", projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["research", "evidence", projectId] });
+    },
+  });
+
   if (status === "unavailable") {
     return (
       <div className="mx-auto w-full max-w-3xl p-6">
@@ -153,6 +180,18 @@ export function ResearchEvidencePage() {
   const gate = evidence.data.gate;
   const indexed = gate.indexed_count;
   const total = Math.max(gate.total_count, 1);
+  const attachedList = attached.data ?? [];
+  const unattached = (library.data ?? []).filter(
+    (kb) => !attachedList.some((entry) => entry.id === kb.id),
+  );
+  const groups = new Map<string, { name: string; files: typeof files }>();
+  for (const file of files) {
+    const kb = attachedList.find((entry) => entry.id === file.kb_id);
+    const key = file.kb_id ?? "unknown";
+    const group = groups.get(key) ?? { name: kb?.name ?? "Unknown source", files: [] };
+    group.files.push(file);
+    groups.set(key, group);
+  }
 
   return (
     <div className="mx-auto w-full max-w-3xl p-6">
@@ -251,6 +290,63 @@ export function ResearchEvidencePage() {
 
       <Card className="mb-4">
         <CardHeader>
+          <CardTitle>Attached knowledge</CardTitle>
+          <CardDescription>Detaching hides files from this project without deleting them.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {attachedList.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nothing attached yet.</p>
+          ) : (
+            attachedList.map((kb) => (
+              <div key={kb.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{kb.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {kb.category} · {kb.file_count} files
+                  </p>
+                </div>
+                <Button size="sm" variant="ghost" disabled={detach.isPending} onClick={() => detach.mutate(kb.id)}>
+                  Detach
+                </Button>
+              </div>
+            ))
+          )}
+          {unattached.length > 0 ? (
+            <div className="flex flex-col gap-2" role="radiogroup" aria-label="Attach a knowledge base">
+              {unattached.map((kb) => (
+                <label key={kb.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="attach-kb"
+                    value={kb.id}
+                    checked={attachId === kb.id}
+                    onChange={() => setAttachId(kb.id)}
+                  />
+                  <span>{kb.name}</span>
+                </label>
+              ))}
+              <div>
+                <Button
+                  size="sm"
+                  disabled={!attachId || attach.isPending}
+                  onClick={() => attach.mutate(attachId)}
+                >
+                  Attach
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => navigate("/research/knowledge")}>
+                New knowledge base
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="mb-4">
+        <CardHeader>
           <CardTitle>
             Indexed {indexed} of {gate.total_count} files
           </CardTitle>
@@ -259,24 +355,33 @@ export function ResearchEvidencePage() {
           <Progress value={(indexed / total) * 100} />
           {files.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No evidence files yet. Add the first one above.
+              No evidence files yet. Upload above or attach a knowledge base.
             </p>
           ) : (
-            <div className="flex flex-col gap-2">
-              {files.map((file) => (
-                <div
-                  key={file.file_id}
-                  className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{file.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {file.type} · {file.claims.length} sections
-                    </p>
+            <div className="flex flex-col gap-3">
+              {[...groups.entries()].map(([key, group]) => (
+                <div key={key}>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {group.name}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {group.files.map((file) => (
+                      <div
+                        key={file.file_id}
+                        className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{file.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {file.type} · {file.claims.length} sections
+                          </p>
+                        </div>
+                        <Badge variant={file.status === "indexed" ? "default" : file.status === "failed" ? "destructive" : "secondary"}>
+                          {file.status}
+                        </Badge>
+                      </div>
+                    ))}
                   </div>
-                  <Badge variant={file.status === "indexed" ? "default" : "secondary"}>
-                    {file.status}
-                  </Badge>
                 </div>
               ))}
             </div>

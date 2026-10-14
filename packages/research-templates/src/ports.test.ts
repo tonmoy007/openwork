@@ -410,3 +410,75 @@ test("questions open, answer, and skip", async () => {
     store.close()
   }
 })
+
+test("legacy databases migrate files into owned knowledge bases", async () => {
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { unlink } = await import("node:fs/promises");
+  const { DatabaseSync } = await import("node:sqlite");
+  const path = join(tmpdir(), `sps-legacy-${Date.now()}-${Math.floor(Math.random() * 1e6)}.sqlite`);
+  const legacy = new DatabaseSync(path);
+  legacy.exec(`
+    CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', country TEXT NOT NULL DEFAULT '', institution TEXT NOT NULL DEFAULT '', template_ref TEXT NOT NULL, knowledge_category TEXT NOT NULL, phase TEXT NOT NULL DEFAULT 'evidence', created_at TEXT NOT NULL);
+    CREATE TABLE evidence_files (file_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, size INTEGER NOT NULL, status TEXT NOT NULL, claims_json TEXT NOT NULL DEFAULT '[]');
+  `);
+  legacy.prepare(
+    "INSERT INTO projects (id, name, template_ref, knowledge_category, phase, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run("proj-legacy", "Legacy", "sps-ecrs-v1@1.0", "service-evidence", "evidence", new Date().toISOString());
+  legacy.prepare(
+    "INSERT INTO evidence_files (file_id, project_id, name, type, size, status, claims_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run("file-legacy", "proj-legacy", "Old.txt", "sop", 10, "indexed", JSON.stringify([{ claim_id: "file-legacy:c1", file_id: "file-legacy", page: 1, section: "body", quote: "legacy quote", tags: ["evidence"], hash: "abc" }]));
+  legacy.close();
+
+  const store = await openStore(path);
+  try {
+    const attached = store.attachedKBs("proj-legacy");
+    assert.equal(attached.length, 1);
+    assert.equal(attached[0].name, "Project files");
+    assert.equal(attached[0].file_count, 1);
+    const files = store.getEvidence("proj-legacy");
+    assert.equal(files.length, 1);
+    assert.equal(files[0].kb_id, attached[0].id);
+  } finally {
+    store.close();
+    await unlink(path);
+  }
+})
+
+test("knowledge bases attach, union, and detach without deleting", async () => {
+  const store = await openStore(":memory:")
+  try {
+    const project = store.createProject({
+      name: "Welfare Grant",
+      template_ref: "sps-ecrs-v1@1.0",
+      knowledge_category: "service-evidence",
+    });
+    const kb = store.createKB({ name: "Labour Law", category: "global-standards", scope: "global" });
+    assert.equal(store.listKBs().length, 1);
+    assert.deepEqual(store.getEvidence(project.id), []);
+    store.saveEvidence({
+      file_id: "kb-file-1",
+      project_id: "",
+      name: "Act.txt",
+      type: "law",
+      size: 20,
+      status: "indexed",
+      claims: [{ claim_id: "kb-file-1:c1", file_id: "kb-file-1", page: 1, section: "body", quote: "section fourteen", tags: ["evidence", "legal"], hash: "def" }],
+      kb_id: kb.id,
+    });
+    assert.deepEqual(store.getEvidence(project.id), []);
+    store.attachKB(project.id, kb.id);
+    const union = store.getEvidence(project.id);
+    assert.equal(union.length, 1);
+    assert.equal(union[0].source_url, null);
+    assert.equal(store.attachedKBs(project.id)[0].file_count, 1);
+    store.detachKB(project.id, kb.id);
+    assert.deepEqual(store.getEvidence(project.id), []);
+    assert.deepEqual(store.attachedKBs(project.id), []);
+    assert.equal(store.getKBFiles(kb.id).length, 1);
+    assert.equal(store.getKB(kb.id)?.name, "Labour Law");
+    assert.equal(store.getKB("missing"), null);
+  } finally {
+    store.close()
+  }
+})

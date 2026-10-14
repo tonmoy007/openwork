@@ -406,6 +406,9 @@ export const researchEvidenceFileSchema = z.object({
   size: z.number(),
   status: z.enum(["uploading", "indexing", "indexed", "failed"]),
   claims: z.array(researchClaimSchema),
+  kb_id: z.string().nullable(),
+  source_url: z.string().nullable(),
+  retrieved_at: z.string().nullable(),
 });
 export type ResearchEvidenceFile = z.infer<typeof researchEvidenceFileSchema>;
 
@@ -530,6 +533,21 @@ export const templateDocSchema = z.object({
   hash: z.string(),
 });
 export type TemplateDoc = z.infer<typeof templateDocSchema>;
+
+export const knowledgeBaseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  category: z.string(),
+  scope: z.enum(["project", "global"]),
+  owner_project_id: z.string().nullable(),
+  created_at: z.string(),
+});
+export type KnowledgeBase = z.infer<typeof knowledgeBaseSchema>;
+
+export const attachedKBSchema = knowledgeBaseSchema.extend({
+  file_count: z.number(),
+});
+export type AttachedKB = z.infer<typeof attachedKBSchema>;
 
 export const researchQuestionSchema = z.object({
   question_id: z.string(),
@@ -2035,6 +2053,63 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
     },
     assignTemplate: async (projectId: string, template_ref: string): Promise<void> => {
       await requestJson<unknown>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/assign`, { token, method: "POST", body: { template_ref }, timeoutMs: timeouts.activateWorkspace });
+    },
+    listKBs: async (): Promise<KnowledgeBase[]> => {
+      const body = await requestJson<{ knowledge: unknown }>(baseUrl, "/research/knowledge", { token, timeoutMs: timeouts.listWorkspaces });
+      return z.array(knowledgeBaseSchema).parse(body.knowledge);
+    },
+    listKBFiles: async (kbId: string): Promise<ResearchEvidenceFile[]> => {
+      const body = await requestJson<{ files: unknown }>(baseUrl, `/research/knowledge/${encodeURIComponent(kbId)}/files`, { token, timeoutMs: timeouts.listWorkspaces });
+      return z.array(researchEvidenceFileSchema).parse(body.files);
+    },
+    createKB: async (payload: { name: string; category: string; scope: string }): Promise<KnowledgeBase> => {
+      const body = await requestJson<{ kb: unknown }>(baseUrl, "/research/knowledge", { token, method: "POST", body: payload, timeoutMs: timeouts.activateWorkspace });
+      return knowledgeBaseSchema.parse(body.kb);
+    },
+    uploadKBFile: async (kbId: string, payload: { name: string; type: string; text?: string; file?: File }): Promise<ResearchEvidenceFile> => {
+      if (!payload.file) {
+        const body = await requestJson<{ file: unknown }>(baseUrl, `/research/knowledge/${encodeURIComponent(kbId)}/evidence`, { token, method: "POST", body: { name: payload.name, type: payload.type, text: payload.text ?? "" }, timeoutMs: timeouts.workspaceExport });
+        return researchEvidenceFileSchema.parse(body.file);
+      }
+      const form = new FormData();
+      form.append("file", payload.file);
+      form.append("type", payload.type);
+      const response = await fetch(`${baseUrl}/research/knowledge/${encodeURIComponent(kbId)}/evidence`, {
+        method: "POST",
+        headers: buildHeaders(token, hostToken),
+        body: form,
+        signal: AbortSignal.timeout(timeouts.workspaceExport),
+      });
+      if (!response.ok) {
+        const problem = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new OpenworkServerError(response.status, "upload_failed", problem?.message ?? response.statusText, null);
+      }
+      const body = (await response.json()) as { file: unknown };
+      return researchEvidenceFileSchema.parse(body.file);
+    },
+    captureWeb: async (kbId: string, payload: { url: string; title?: string; text: string; query?: string }): Promise<ResearchEvidenceFile> => {
+      const body = await requestJson<{ file: unknown }>(baseUrl, `/research/knowledge/${encodeURIComponent(kbId)}/web-capture`, { token, method: "POST", body: payload, timeoutMs: timeouts.activateWorkspace });
+      return researchEvidenceFileSchema.parse(body.file);
+    },
+    attachedKBs: async (projectId: string): Promise<AttachedKB[]> => {
+      const body = await requestJson<{ knowledge: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/knowledge`, { token, timeoutMs: timeouts.listWorkspaces });
+      return z.array(attachedKBSchema).parse(body.knowledge);
+    },
+    attachKB: async (projectId: string, kb_id: string): Promise<AttachedKB[]> => {
+      const body = await requestJson<{ attached: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/knowledge/attach`, { token, method: "POST", body: { kb_id }, timeoutMs: timeouts.activateWorkspace });
+      return z.array(attachedKBSchema).parse(body.attached);
+    },
+    detachKB: async (projectId: string, kbId: string): Promise<AttachedKB[]> => {
+      const response = await fetch(`${baseUrl}/research/projects/${encodeURIComponent(projectId)}/knowledge/${encodeURIComponent(kbId)}`, {
+        method: "DELETE",
+        headers: buildHeaders(token, hostToken),
+        signal: AbortSignal.timeout(timeouts.activateWorkspace),
+      });
+      if (!response.ok) {
+        throw new OpenworkServerError(response.status, "detach_failed", response.statusText, null);
+      }
+      const body = (await response.json()) as { attached: unknown };
+      return z.array(attachedKBSchema).parse(body.attached);
     },
     listQuestions: async (projectId: string, stage?: string): Promise<ResearchQuestion[]> => {
       const query = stage ? `?stage=${encodeURIComponent(stage)}` : "";

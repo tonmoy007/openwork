@@ -44,6 +44,9 @@ export interface EvidenceFile {
   size: number
   status: EvidenceStatus
   claims: Claim[]
+  kb_id: string | null
+  source_url: string | null
+  retrieved_at: string | null
 }
 
 export interface ResearchProject {
@@ -55,6 +58,22 @@ export interface ResearchProject {
   template_ref: string
   knowledge_category: string
   phase: string
+  created_at: string
+}
+
+export interface KnowledgeBase {
+  id: string
+  name: string
+  category: string
+  scope: "project" | "global"
+  owner_project_id: string | null
+  created_at: string
+}
+
+export interface KBAttachment {
+  id: string
+  project_id: string
+  kb_id: string
   created_at: string
 }
 

@@ -18,6 +18,8 @@ import type {
   EvidenceFile,
   EvidenceStatus,
   InferenceRunner,
+  KBAttachment,
+  KnowledgeBase,
   ProcessSnapshot,
   ProcessStage,
   ProjectMember,
@@ -149,7 +151,25 @@ CREATE TABLE IF NOT EXISTS evidence_files (
   type TEXT NOT NULL,
   size INTEGER NOT NULL,
   status TEXT NOT NULL,
-  claims_json TEXT NOT NULL DEFAULT '[]'
+  claims_json TEXT NOT NULL DEFAULT '[]',
+  kb_id TEXT,
+  source_url TEXT,
+  retrieved_at TEXT
+);
+CREATE TABLE IF NOT EXISTS knowledge_bases (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'project',
+  owner_project_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS kb_attachments (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  kb_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(project_id, kb_id)
 );
 CREATE TABLE IF NOT EXISTS process_models (
   id TEXT PRIMARY KEY,
@@ -232,6 +252,45 @@ function now(): string {
   return new Date().toISOString()
 }
 
+/** Additive migration for pre-KB databases: new columns, then backfill. */
+function migrateEvidenceColumns(db: SqlDriver): void {
+  const columns = db
+    .prepare("PRAGMA table_info(evidence_files)")
+    .all()
+    .map((row) => textColumn(row, "name"))
+  const missing: Array<[string, string]> = [
+    ["kb_id", "TEXT"],
+    ["source_url", "TEXT"],
+    ["retrieved_at", "TEXT"],
+  ]
+  for (const [column, type] of missing) {
+    if (!columns.includes(column)) {
+      db.exec(`ALTER TABLE evidence_files ADD COLUMN ${column} ${type}`)
+    }
+  }
+}
+
+function backfillOwnedKnowledgeBases(db: SqlDriver): void {
+  const orphans = db
+    .prepare("SELECT DISTINCT project_id FROM evidence_files WHERE kb_id IS NULL")
+    .all()
+    .map((row) => textColumn(row, "project_id"))
+  for (const project_id of orphans) {
+    const id = randomUUID()
+    const created = now()
+    db.prepare(
+      "INSERT INTO knowledge_bases (id, name, category, scope, owner_project_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(id, "Project files", "service-evidence", "project", project_id, created)
+    db.prepare(
+      "INSERT INTO kb_attachments (id, project_id, kb_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(project_id, kb_id) DO NOTHING",
+    ).run(randomUUID(), project_id, id, created)
+    db.prepare("UPDATE evidence_files SET kb_id = ? WHERE project_id = ? AND kb_id IS NULL").run(
+      id,
+      project_id,
+    )
+  }
+}
+
 function hashDoc(doc_json: string): string {
   return createHash("sha256").update(doc_json).digest("hex")
 }
@@ -306,6 +365,21 @@ function claimListColumn(row: SqlRow, key: string): Claim[] {
   })
 }
 
+function readEvidenceFile(row: SqlRow): EvidenceFile {
+  return {
+    file_id: textColumn(row, "file_id"),
+    project_id: textColumn(row, "project_id"),
+    name: textColumn(row, "name"),
+    type: textColumn(row, "type"),
+    size: intColumn(row, "size"),
+    status: evidenceStatus(textColumn(row, "status")),
+    claims: claimListColumn(row, "claims_json"),
+    kb_id: optionalTextColumn(row, "kb_id"),
+    source_url: optionalTextColumn(row, "source_url"),
+    retrieved_at: optionalTextColumn(row, "retrieved_at"),
+  }
+}
+
 function evidenceStatus(value: string): EvidenceStatus {
   if (value !== "uploading" && value !== "indexing" && value !== "indexed" && value !== "failed") {
     throw new StoreError("CORRUPT_ROW", `unknown evidence status ${value}`)
@@ -362,9 +436,26 @@ export interface LocalStore {
   addMember(member: ProjectMember): ProjectMember
   listMembers(project_id: string): ProjectMember[]
   saveEvidence(
-    file: Omit<EvidenceFile, "claims"> & { claims?: EvidenceFile["claims"] },
+    file: Omit<EvidenceFile, "claims" | "kb_id" | "source_url" | "retrieved_at"> & {
+      claims?: EvidenceFile["claims"]
+      kb_id?: string | null
+      source_url?: string | null
+      retrieved_at?: string | null
+    },
   ): EvidenceFile
   getEvidence(project_id: string): EvidenceFile[]
+  createKB(input: {
+    name: string
+    category: string
+    scope?: "project" | "global"
+    owner_project_id?: string | null
+  }): KnowledgeBase
+  listKBs(): KnowledgeBase[]
+  getKB(id: string): KnowledgeBase | null
+  attachKB(project_id: string, kb_id: string): void
+  detachKB(project_id: string, kb_id: string): void
+  attachedKBs(project_id: string): Array<KnowledgeBase & { file_count: number }>
+  getKBFiles(kb_id: string): EvidenceFile[]
   saveSnapshot(input: {
     project_id: string
     stage: ProcessSnapshot["stage"]
@@ -405,6 +496,8 @@ export function openStore(path: string): Promise<LocalStore> {
 
 function buildStore(db: SqlDriver): LocalStore {
   db.exec(DDL)
+  migrateEvidenceColumns(db)
+  backfillOwnedKnowledgeBases(db)
 
   function parseTemplateDoc(doc_json: string): { id: string; version: string } {
     const result = validateTemplate(JSON.parse(doc_json))
@@ -694,9 +787,15 @@ function buildStore(db: SqlDriver): LocalStore {
         )
     },
     saveEvidence(file) {
-      const record: EvidenceFile = { claims: [], ...file }
+      const record: EvidenceFile = {
+        claims: [],
+        kb_id: null,
+        source_url: null,
+        retrieved_at: null,
+        ...file,
+      }
       db.prepare(
-        "INSERT INTO evidence_files (file_id, project_id, name, type, size, status, claims_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(file_id) DO UPDATE SET status = excluded.status, claims_json = excluded.claims_json",
+        "INSERT INTO evidence_files (file_id, project_id, name, type, size, status, claims_json, kb_id, source_url, retrieved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(file_id) DO UPDATE SET status = excluded.status, claims_json = excluded.claims_json, kb_id = excluded.kb_id, source_url = excluded.source_url, retrieved_at = excluded.retrieved_at",
       ).run(
         record.file_id,
         record.project_id,
@@ -705,26 +804,132 @@ function buildStore(db: SqlDriver): LocalStore {
         record.size,
         record.status,
         JSON.stringify(record.claims),
+        record.kb_id,
+        record.source_url,
+        record.retrieved_at,
       )
       return record
     },
     getEvidence(project_id) {
+      const attached = db
+        .prepare("SELECT kb_id FROM kb_attachments WHERE project_id = ?")
+        .all(project_id)
+        .map((row) => textColumn(row, "kb_id"))
+      const placeholders = attached.map(() => "?").join(", ")
+      const where =
+        attached.length > 0
+          ? `(kb_id IN (${placeholders}) OR (project_id = ? AND kb_id IS NULL))`
+          : `(project_id = ? AND kb_id IS NULL)`
+      const params = attached.length > 0 ? [...attached, project_id] : [project_id]
       return db
         .prepare(
-          "SELECT file_id, project_id, name, type, size, status, claims_json FROM evidence_files WHERE project_id = ? ORDER BY rowid",
+          `SELECT file_id, project_id, name, type, size, status, claims_json, kb_id, source_url, retrieved_at FROM evidence_files WHERE ${where} ORDER BY rowid`,
         )
-        .all(project_id)
+        .all(...params)
+        .map(readEvidenceFile)
+    },
+    getKBFiles(kb_id) {
+      return db
+        .prepare(
+          "SELECT file_id, project_id, name, type, size, status, claims_json, kb_id, source_url, retrieved_at FROM evidence_files WHERE kb_id = ? ORDER BY rowid",
+        )
+        .all(kb_id)
+        .map(readEvidenceFile)
+    },
+    createKB(input) {
+      const record: KnowledgeBase = {
+        id: randomUUID(),
+        name: input.name,
+        category: input.category,
+        scope: input.scope ?? "project",
+        owner_project_id: input.owner_project_id ?? null,
+        created_at: now(),
+      }
+      db.prepare(
+        "INSERT INTO knowledge_bases (id, name, category, scope, owner_project_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(
+        record.id,
+        record.name,
+        record.category,
+        record.scope,
+        record.owner_project_id,
+        record.created_at,
+      )
+      return record
+    },
+    listKBs() {
+      return db
+        .prepare(
+          "SELECT id, name, category, scope, owner_project_id, created_at FROM knowledge_bases ORDER BY rowid",
+        )
+        .all()
         .map(
-          (row): EvidenceFile => ({
-            file_id: textColumn(row, "file_id"),
-            project_id: textColumn(row, "project_id"),
+          (row): KnowledgeBase => ({
+            id: textColumn(row, "id"),
             name: textColumn(row, "name"),
-            type: textColumn(row, "type"),
-            size: intColumn(row, "size"),
-            status: evidenceStatus(textColumn(row, "status")),
-            claims: claimListColumn(row, "claims_json"),
+            category: textColumn(row, "category"),
+            scope: textColumn(row, "scope") === "global" ? "global" : "project",
+            owner_project_id: optionalTextColumn(row, "owner_project_id"),
+            created_at: textColumn(row, "created_at"),
           }),
         )
+    },
+    getKB(id) {
+      const row = db
+        .prepare(
+          "SELECT id, name, category, scope, owner_project_id, created_at FROM knowledge_bases WHERE id = ?",
+        )
+        .get(id)
+      if (row === undefined || row === null) return null
+      return {
+        id: textColumn(row, "id"),
+        name: textColumn(row, "name"),
+        category: textColumn(row, "category"),
+        scope: textColumn(row, "scope") === "global" ? "global" : "project",
+        owner_project_id: optionalTextColumn(row, "owner_project_id"),
+        created_at: textColumn(row, "created_at"),
+      }
+    },
+    attachKB(project_id, kb_id) {
+      const project = db
+        .prepare("SELECT id FROM projects WHERE id = ?")
+        .get(project_id)
+      if (project === undefined || project === null) {
+        throw new StoreError(NOT_FOUND, `project ${project_id} not found`)
+      }
+      const kb = db.prepare("SELECT id FROM knowledge_bases WHERE id = ?").get(kb_id)
+      if (kb === undefined || kb === null) {
+        throw new StoreError(NOT_FOUND, `knowledge base ${kb_id} not found`)
+      }
+      db.prepare(
+        "INSERT INTO kb_attachments (id, project_id, kb_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(project_id, kb_id) DO NOTHING",
+      ).run(randomUUID(), project_id, kb_id, now())
+    },
+    detachKB(project_id, kb_id) {
+      db.prepare("DELETE FROM kb_attachments WHERE project_id = ? AND kb_id = ?").run(
+        project_id,
+        kb_id,
+      )
+    },
+    attachedKBs(project_id) {
+      return db
+        .prepare(
+          `SELECT k.id, k.name, k.category, k.scope, k.owner_project_id, k.created_at,
+                  (SELECT COUNT(*) FROM evidence_files WHERE kb_id = k.id) AS file_count
+           FROM knowledge_bases k JOIN kb_attachments a ON a.kb_id = k.id
+           WHERE a.project_id = ? ORDER BY k.rowid`,
+        )
+        .all(project_id)
+        .map((row) => ({
+          id: textColumn(row, "id"),
+          name: textColumn(row, "name"),
+          category: textColumn(row, "category"),
+          scope: (textColumn(row, "scope") === "global" ? "global" : "project") as "project" | "global",
+          owner_project_id: optionalTextColumn(row, "owner_project_id"),
+          created_at: textColumn(row, "created_at"),
+          file_count:
+            typeof row.file_count === "number" ? row.file_count : Number(row.file_count ?? 0),
+        }))
     },
     saveSnapshot(input) {
       const snapshot: ProcessSnapshot = {
