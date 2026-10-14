@@ -40,6 +40,22 @@ function hashClaim(file_id: string, page: number, section: string, quote: string
     .slice(0, 16)
 }
 
+/** One citable claim per BPMN task label so diagram steps draft normally. */
+export function bpmnTaskClaims(file_id: string, labels: string[]): Claim[] {
+  return labels.map((label, index) => {
+    const quote = `BPMN task: ${label}`.slice(0, MAX_QUOTE_CHARS)
+    return {
+      claim_id: `${file_id}:bpmn-${index + 1}`,
+      file_id,
+      page: 1,
+      section: label.slice(0, 80),
+      quote,
+      tags: ["evidence", "bpmn"],
+      hash: hashClaim(file_id, 1, label, quote),
+    }
+  })
+}
+
 interface Chunk {
   section: string
   text: string

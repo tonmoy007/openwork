@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { extractClaims } from "@openwork/research-templates/claims"
+import { bpmnTaskClaims, extractClaims } from "@openwork/research-templates/claims"
 import { evaluateEvidenceGate } from "@openwork/research-templates/gates"
 import type { EvidenceFile } from "@openwork/research-templates/ports"
 
@@ -73,6 +73,14 @@ test("empty text yields no claims, short text yields one", () => {
   const claims = extractClaims("e2", "Ward office visit takes days.", "test")
   assert.equal(claims.length, 1)
   assert.equal(claims[0].page, 1)
+})
+
+test("bpmn task labels become citable claims", () => {
+  const claims = bpmnTaskClaims("f9", ["Ward Office Visit", "Union Parishad"])
+  assert.equal(claims.length, 2)
+  assert.equal(claims[0].claim_id, "f9:bpmn-1")
+  assert.ok(claims[0].tags.includes("bpmn"))
+  assert.ok(claims[1].quote.includes("Union Parishad"))
 })
 
 test("evidence gate opens only when all files are indexed with claims", () => {

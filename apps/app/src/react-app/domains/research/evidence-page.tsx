@@ -34,6 +34,8 @@ export function ResearchEvidencePage() {
   const [fileName, setFileName] = useState("");
   const [fileType, setFileType] = useState(EVIDENCE_TYPES[0]);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploads, setUploads] = useState<Array<{ name: string; status: string; error?: string }>>([]);
 
   const evidence = useQuery({
     queryKey: ["research", "evidence", projectId],
@@ -62,6 +64,39 @@ export function ResearchEvidencePage() {
     onError: (cause) =>
       setError(cause instanceof Error ? cause.message : "Upload did not finish."),
   });
+
+  async function uploadFiles(list: FileList | null) {
+    if (!client || !list || list.length === 0 || uploading) return;
+    setUploading(true);
+    try {
+      for (const file of [...list]) {
+        setUploads((current) => [...current.filter((entry) => entry.name !== file.name), { name: file.name, status: "reading" }]);
+        const dataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = typeof reader.result === "string" ? reader.result : "";
+            resolve(result.includes(",") ? result.split(",").slice(1).join(",") : result);
+          };
+          reader.onerror = () => reject(new Error("Could not read the file."));
+          reader.readAsDataURL(file);
+        }).catch(() => null);
+        if (dataBase64 === null) {
+          setUploads((current) => current.map((entry) => entry.name === file.name ? { ...entry, status: "failed", error: "Could not read the file." } : entry));
+          continue;
+        }
+        setUploads((current) => current.map((entry) => entry.name === file.name ? { ...entry, status: "uploading" } : entry));
+        try {
+          await client.uploadResearchBinary(projectId, { name: file.name, type: fileType, dataBase64 });
+          setUploads((current) => current.map((entry) => entry.name === file.name ? { ...entry, status: "indexed" } : entry));
+        } catch (cause) {
+          setUploads((current) => current.map((entry) => entry.name === file.name ? { ...entry, status: "failed", error: cause instanceof Error ? cause.message : "Upload did not finish." } : entry));
+        }
+      }
+      void queryClient.invalidateQueries({ queryKey: ["research", "evidence", projectId] });
+    } finally {
+      setUploading(false);
+    }
+  }
 
   if (status === "unavailable") {
     return (
@@ -127,6 +162,36 @@ export function ResearchEvidencePage() {
           Every law, SOP, form, and observation cited and tagged.
         </p>
       </div>
+
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>Upload files</CardTitle>
+          <CardDescription>
+            PDF, Word, BPMN, or text — up to 5 MB each. Unreadable files stay listed as failed with the reason.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Input
+            type="file"
+            multiple
+            accept=".pdf,.docx,.bpmn,.xml,.txt,.md"
+            onChange={(event) => void uploadFiles(event.target.files)}
+            disabled={uploading}
+          />
+          {uploads.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {uploads.map((upload) => (
+                <div key={upload.name} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="truncate">{upload.name}</span>
+                  <Badge variant={upload.status === "indexed" ? "default" : upload.status === "failed" ? "destructive" : "secondary"}>
+                    {upload.status === "failed" && upload.error ? `failed: ${upload.error}` : upload.status}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card className="mb-4">
         <CardHeader>

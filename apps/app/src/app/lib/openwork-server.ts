@@ -1911,6 +1911,10 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
       const body = await requestJson<{ file: unknown; gate: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/evidence`, { token, method: "POST", body: payload, timeoutMs: timeouts.workspaceExport });
       return { file: researchEvidenceFileSchema.parse(body.file), gate: researchGateSchema.parse(body.gate) };
     },
+    uploadResearchBinary: async (projectId: string, payload: { name: string; type: string; dataBase64: string }): Promise<{ file: ResearchEvidenceFile; gate: ResearchGate }> => {
+      const body = await requestJson<{ file: unknown; gate: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/evidence`, { token, method: "POST", body: payload, timeoutMs: timeouts.workspaceExport });
+      return { file: researchEvidenceFileSchema.parse(body.file), gate: researchGateSchema.parse(body.gate) };
+    },
     getResearchGates: async (projectId: string): Promise<{ evidence: ResearchGate }> => {
       const body = await requestJson<{ evidence: unknown }>(baseUrl, `/research/projects/${encodeURIComponent(projectId)}/gates`, { token, timeoutMs: timeouts.listWorkspaces });
       return { evidence: researchGateSchema.parse(body.evidence) };

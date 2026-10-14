@@ -11,8 +11,9 @@ import { modelToXml, variantToXml } from "@openwork/process-model/bpmn";
 import { projectCosts } from "@openwork/process-model/cost";
 import { buildDecisionRecord, buildSimplificationReport } from "@openwork/process-model/report";
 import { buildDecisionWorkbook } from "@openwork/process-model/xlsx";
-import { extractClaims } from "@openwork/research-templates/claims";
+import { extractClaims, bpmnTaskClaims } from "@openwork/research-templates/claims";
 import { evaluateEvidenceGate } from "@openwork/research-templates/gates";
+import { extractEvidenceText } from "../research/evidence-text.js";
 import { openStore, type LocalStore } from "@openwork/research-templates/adapters/local-sqlite";
 import { StoreError } from "@openwork/research-templates/ports";
 import { ApiError } from "../errors.js";
@@ -102,25 +103,80 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
 
   addRoute(routes, "POST", "/research/projects/:id/evidence", "client", async (ctx) => {
     ensureWritable(config);
+    const store = await storeFor(config);
+    requireProject(store, ctx.params.id);
     const body = await readJsonBody(ctx.request);
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const type = typeof body.type === "string" ? body.type : "sop";
-    const text = typeof body.text === "string" ? body.text : "";
-    if (!name || !text) {
-      throw new ApiError(422, "invalid_evidence", "name and text are required", {});
+    const textInput = typeof body.text === "string" ? body.text : "";
+    const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+    if (!name || (!textInput && !dataBase64)) {
+      throw new ApiError(422, "invalid_evidence", "name and text or file bytes are required", {});
     }
-    if (Buffer.byteLength(text, "utf8") > MAX_EVIDENCE_TEXT_BYTES) {
+    const file_id = randomUUID();
+    if (textInput && Buffer.byteLength(textInput, "utf8") > MAX_EVIDENCE_TEXT_BYTES) {
       throw new ApiError(413, "evidence_too_large", "Evidence text exceeds 5 MB", {});
     }
-    const store = await storeFor(config);
-    const file_id = randomUUID();
-    const claims = extractClaims(file_id, text, type);
+    const fail = (reason: string, status = 422): never => {
+      store.saveEvidence({
+        file_id,
+        project_id: ctx.params.id,
+        name,
+        type,
+        size: 0,
+        status: "failed",
+        claims: [],
+      });
+      throw new ApiError(status, "evidence_failed", reason, {});
+    };
+    if (textInput) {
+      const claims = extractClaims(file_id, textInput, type);
+      const file = store.saveEvidence({
+        file_id,
+        project_id: ctx.params.id,
+        name,
+        type,
+        size: Buffer.byteLength(textInput, "utf8"),
+        status: "indexed",
+        claims,
+      });
+      return jsonResponse(
+        { file, gate: evaluateEvidenceGate(store.getEvidence(ctx.params.id)) },
+        201,
+      );
+    }
+    let bytes: Uint8Array;
+    try {
+      const raw = Buffer.from(dataBase64, "base64");
+      if (raw.byteLength === 0) return fail("The file arrived empty.");
+      if (raw.byteLength > MAX_EVIDENCE_TEXT_BYTES) {
+        return fail("Files larger than 5 MB are not supported yet.", 413);
+      }
+      const copy = new Uint8Array(raw.byteLength);
+      copy.set(raw);
+      bytes = copy;
+    } catch {
+      return fail("The file bytes are not valid base64.");
+    }
+    let extracted: { text: string; taskLabels: string[] };
+    try {
+      extracted = await extractEvidenceText(name, type, bytes);
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : "The file could not be read.");
+    }
+    const claims = [
+      ...extractClaims(file_id, extracted.text, type),
+      ...bpmnTaskClaims(file_id, extracted.taskLabels),
+    ];
+    if (claims.length === 0) {
+      return fail("The file indexed but yielded no readable sections.");
+    }
     const file = store.saveEvidence({
       file_id,
       project_id: ctx.params.id,
       name,
       type,
-      size: Buffer.byteLength(text, "utf8"),
+      size: bytes.byteLength,
       status: "indexed",
       claims,
     });
