@@ -154,7 +154,8 @@ CREATE TABLE IF NOT EXISTS evidence_files (
   claims_json TEXT NOT NULL DEFAULT '[]',
   kb_id TEXT,
   source_url TEXT,
-  retrieved_at TEXT
+  retrieved_at TEXT,
+  source_base64 TEXT
 );
 CREATE TABLE IF NOT EXISTS knowledge_bases (
   id TEXT PRIMARY KEY,
@@ -262,6 +263,7 @@ function migrateEvidenceColumns(db: SqlDriver): void {
     ["kb_id", "TEXT"],
     ["source_url", "TEXT"],
     ["retrieved_at", "TEXT"],
+    ["source_base64", "TEXT"],
   ]
   for (const [column, type] of missing) {
     if (!columns.includes(column)) {
@@ -377,6 +379,7 @@ function readEvidenceFile(row: SqlRow): EvidenceFile {
     kb_id: optionalTextColumn(row, "kb_id"),
     source_url: optionalTextColumn(row, "source_url"),
     retrieved_at: optionalTextColumn(row, "retrieved_at"),
+    source_base64: optionalTextColumn(row, "source_base64"),
   }
 }
 
@@ -436,11 +439,12 @@ export interface LocalStore {
   addMember(member: ProjectMember): ProjectMember
   listMembers(project_id: string): ProjectMember[]
   saveEvidence(
-    file: Omit<EvidenceFile, "claims" | "kb_id" | "source_url" | "retrieved_at"> & {
+    file: Omit<EvidenceFile, "claims" | "kb_id" | "source_url" | "retrieved_at" | "source_base64"> & {
       claims?: EvidenceFile["claims"]
       kb_id?: string | null
       source_url?: string | null
       retrieved_at?: string | null
+      source_base64?: string | null
     },
   ): EvidenceFile
   getEvidence(project_id: string): EvidenceFile[]
@@ -454,8 +458,11 @@ export interface LocalStore {
   getKB(id: string): KnowledgeBase | null
   attachKB(project_id: string, kb_id: string): void
   detachKB(project_id: string, kb_id: string): void
+  deleteKB(id: string): { files: number }
+  reindexFile(file_id: string, input: { status: "indexed" | "failed"; claims: Claim[] }): EvidenceFile | null
   attachedKBs(project_id: string): Array<KnowledgeBase & { file_count: number }>
   getKBFiles(kb_id: string): EvidenceFile[]
+  deleteFile(file_id: string): boolean
   saveSnapshot(input: {
     project_id: string
     stage: ProcessSnapshot["stage"]
@@ -793,9 +800,10 @@ function buildStore(db: SqlDriver): LocalStore {
         source_url: null,
         retrieved_at: null,
         ...file,
+        source_base64: file.source_base64 ?? null,
       }
       db.prepare(
-        "INSERT INTO evidence_files (file_id, project_id, name, type, size, status, claims_json, kb_id, source_url, retrieved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(file_id) DO UPDATE SET status = excluded.status, claims_json = excluded.claims_json, kb_id = excluded.kb_id, source_url = excluded.source_url, retrieved_at = excluded.retrieved_at",
+        "INSERT INTO evidence_files (file_id, project_id, name, type, size, status, claims_json, kb_id, source_url, retrieved_at, source_base64) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(file_id) DO UPDATE SET status = excluded.status, claims_json = excluded.claims_json, kb_id = excluded.kb_id, source_url = excluded.source_url, retrieved_at = excluded.retrieved_at, source_base64 = excluded.source_base64",
       ).run(
         record.file_id,
         record.project_id,
@@ -807,6 +815,7 @@ function buildStore(db: SqlDriver): LocalStore {
         record.kb_id,
         record.source_url,
         record.retrieved_at,
+        record.source_base64,
       )
       return record
     },
@@ -823,7 +832,7 @@ function buildStore(db: SqlDriver): LocalStore {
       const params = attached.length > 0 ? [...attached, project_id] : [project_id]
       return db
         .prepare(
-          `SELECT file_id, project_id, name, type, size, status, claims_json, kb_id, source_url, retrieved_at FROM evidence_files WHERE ${where} ORDER BY rowid`,
+          `SELECT file_id, project_id, name, type, size, status, claims_json, kb_id, source_url, retrieved_at, source_base64 FROM evidence_files WHERE ${where} ORDER BY rowid`,
         )
         .all(...params)
         .map(readEvidenceFile)
@@ -831,10 +840,13 @@ function buildStore(db: SqlDriver): LocalStore {
     getKBFiles(kb_id) {
       return db
         .prepare(
-          "SELECT file_id, project_id, name, type, size, status, claims_json, kb_id, source_url, retrieved_at FROM evidence_files WHERE kb_id = ? ORDER BY rowid",
+          "SELECT file_id, project_id, name, type, size, status, claims_json, kb_id, source_url, retrieved_at, source_base64 FROM evidence_files WHERE kb_id = ? ORDER BY rowid",
         )
         .all(kb_id)
         .map(readEvidenceFile)
+    },
+    deleteFile(file_id) {
+      return db.prepare("DELETE FROM evidence_files WHERE file_id = ?").run(file_id).changes > 0
     },
     createKB(input) {
       const record: KnowledgeBase = {
@@ -910,6 +922,28 @@ function buildStore(db: SqlDriver): LocalStore {
         project_id,
         kb_id,
       )
+    },
+    deleteKB(id) {
+      const files = db
+        .prepare("SELECT file_id FROM evidence_files WHERE kb_id = ?")
+        .all(id)
+      db.prepare("DELETE FROM kb_attachments WHERE kb_id = ?").run(id)
+      db.prepare("DELETE FROM evidence_files WHERE kb_id = ?").run(id)
+      db.prepare("DELETE FROM knowledge_bases WHERE id = ?").run(id)
+      return { files: files.length }
+    },
+    reindexFile(file_id, input) {
+      const result = db
+        .prepare("UPDATE evidence_files SET status = ?, claims_json = ? WHERE file_id = ?")
+        .run(input.status, JSON.stringify(input.claims), file_id)
+      if (result.changes === 0) return null
+      const row = db
+        .prepare(
+          "SELECT file_id, project_id, name, type, size, status, claims_json, kb_id, source_url, retrieved_at, source_base64 FROM evidence_files WHERE file_id = ?",
+        )
+        .get(file_id)
+      if (row === undefined || row === null) return null
+      return readEvidenceFile(row)
     },
     attachedKBs(project_id) {
       return db

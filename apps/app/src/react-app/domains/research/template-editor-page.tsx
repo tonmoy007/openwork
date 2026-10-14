@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { CostError, evaluateFormula } from "@openwork/process-model/cost";
 import { useBootState } from "@/react-app/shell/boot-state";
+import { ResearchBack } from "./page-shell";
 import { useResearchClient } from "./use-research-client";
 
 const PRESETS: Record<string, Record<string, number>> = {
@@ -186,11 +187,14 @@ export function ResearchTemplateEditorPage() {
   return (
     <div className="mx-auto w-full max-w-5xl p-6">
       <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
+        <div className="flex items-start gap-2">
+          <ResearchBack to="/research/templates" label="templates" />
+          <div>
           <h1 className="text-xl font-semibold tracking-tight">Edit {templateId}</h1>
           <p className="text-sm text-muted-foreground">
             Version {parsedDoc?.version ?? "?"} {dirty ? "· unsaved changes" : "· saved"}
           </p>
+          </div>
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => bump("minor")}>Bump minor</Button>

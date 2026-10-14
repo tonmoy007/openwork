@@ -951,6 +951,22 @@ export function registerResearchRoutes(options: RegisterResearchRoutesOptions): 
     return jsonResponse({ files: store.getKBFiles(ctx.params.kbId) });
   });
 
+  addRoute(routes, "DELETE", "/research/knowledge/:kbId/files/:fileId", "client", async (ctx) => {
+    ensureWritable(config);
+    const store = await storeFor(config);
+    const kb = store.getKB(ctx.params.kbId);
+    if (!kb) {
+      throw new ApiError(404, "kb_not_found", "Knowledge base not found", { id: ctx.params.kbId });
+    }
+    const file = store.getKBFiles(kb.id).find((entry) => entry.file_id === ctx.params.fileId);
+    if (!file) {
+      throw new ApiError(404, "file_not_found", "Evidence file not found in this knowledge base", { id: ctx.params.fileId });
+    }
+    store.deleteFile(ctx.params.fileId);
+    audit(store, file.project_id, ctx.actor?.clientId, "kb.file_deleted", [ctx.params.fileId], `${file.name} removed from ${kb.name}`);
+    return jsonResponse({ deleted: ctx.params.fileId });
+  });
+
   addRoute(routes, "POST", "/research/knowledge/:kbId/evidence", "client", async (ctx) => {
     ensureWritable(config);
     const store = await storeFor(config);

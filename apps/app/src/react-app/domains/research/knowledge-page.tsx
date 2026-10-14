@@ -17,6 +17,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useBootState } from "@/react-app/shell/boot-state";
+import { ResearchBack } from "./page-shell";
 import { useResearchClient } from "./use-research-client";
 
 const CATEGORIES = ["service-evidence", "global-standards", "local-sops"];
@@ -64,11 +65,14 @@ export function ResearchKnowledgePage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl p-6">
-      <div className="mb-6">
+      <div className="mb-6 flex items-start gap-2">
+        <ResearchBack to="/research" label="projects" />
+        <div>
         <h1 className="text-xl font-semibold tracking-tight">Knowledge bases</h1>
         <p className="text-sm text-muted-foreground">
           Upload once, attach to any project. Detaching never deletes.
         </p>
+        </div>
       </div>
       <NewKnowledgeBaseCard
         onCreated={() => void queryClient.invalidateQueries({ queryKey: ["research", "knowledge"] })}

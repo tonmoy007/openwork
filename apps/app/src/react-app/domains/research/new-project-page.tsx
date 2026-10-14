@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useBootState } from "@/react-app/shell/boot-state";
-import { researchEvidenceRoute } from "./research-routes";
+import { researchEvidenceRoute, researchPortfolioRoute } from "./research-routes";
 import { useResearchClient } from "./use-research-client";
 
 const KNOWLEDGE_CATEGORIES = ["service-evidence", "global-standards", "local-sops"];
@@ -156,7 +156,7 @@ export function ResearchNewProjectPage() {
             <Button disabled={!ready || !valid} onClick={() => create.mutate()}>
               {create.isPending ? "Creating…" : "Create project"}
             </Button>
-            <Button variant="ghost" onClick={() => navigate(-1)}>
+            <Button variant="ghost" onClick={() => navigate(researchPortfolioRoute())}>
               Cancel
             </Button>
           </div>

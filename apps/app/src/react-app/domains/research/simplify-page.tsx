@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { projectCosts } from "@openwork/process-model/cost";
 import { useBootState } from "@/react-app/shell/boot-state";
 import { researchAsisRoute, researchTobeRoute } from "./research-routes";
+import { ResearchBack } from "./page-shell";
 import { useResearchClient } from "./use-research-client";
 
 const CRITERIA = [
@@ -137,11 +138,14 @@ export function ResearchSimplifyPage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl p-6">
-      <div className="mb-6">
+      <div className="mb-6 flex items-start gap-2">
+        <ResearchBack to={researchAsisRoute(projectId)} label="as-is" />
+        <div>
         <h1 className="text-xl font-semibold tracking-tight">Simplification</h1>
         <p className="text-sm text-muted-foreground">
           Say what must stay, then decide every proposed change step by step.
         </p>
+        </div>
       </div>
 
       <Card className="mb-4">

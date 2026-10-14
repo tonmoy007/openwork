@@ -47,6 +47,7 @@ export interface EvidenceFile {
   kb_id: string | null
   source_url: string | null
   retrieved_at: string | null
+  source_base64: string | null
 }
 
 export interface ResearchProject {

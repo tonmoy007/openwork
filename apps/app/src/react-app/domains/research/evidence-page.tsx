@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router";
 
@@ -21,6 +21,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useBootState } from "@/react-app/shell/boot-state";
 import { researchAsisRoute, researchPortfolioRoute } from "./research-routes";
+import { DeleteFileButton } from "./delete-file-button";
+import { ResearchBack } from "./page-shell";
 import { useResearchClient } from "./use-research-client";
 
 const EVIDENCE_TYPES = ["sop", "law", "form", "interview", "bpmn", "web"];
@@ -102,6 +104,7 @@ export function ResearchEvidencePage() {
   const [fileType, setFileType] = useState(EVIDENCE_TYPES[0]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploads, setUploads] = useState<Array<{ name: string; status: string; error?: string }>>([]);
 
   const evidence = useQuery({
@@ -262,11 +265,14 @@ export function ResearchEvidencePage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl p-6">
-      <div className="mb-6">
+      <div className="mb-6 flex items-start gap-2">
+        <ResearchBack to={researchPortfolioRoute()} label="projects" />
+        <div>
         <h1 className="text-xl font-semibold tracking-tight">Evidence library</h1>
         <p className="text-sm text-muted-foreground">
           Every law, SOP, form, and observation cited and tagged.
         </p>
+        </div>
       </div>
 
       <Card className="mb-4">
@@ -277,13 +283,24 @@ export function ResearchEvidencePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <Input
+          <input
+            ref={fileInputRef}
             type="file"
             multiple
             accept=".pdf,.docx,.bpmn,.xml,.txt,.md"
-            onChange={(event) => void uploadFiles(event.target.files)}
+            className="hidden"
+            aria-label="Choose evidence files"
+            onChange={(event) => {
+              void uploadFiles(event.target.files);
+              event.target.value = "";
+            }}
             disabled={uploading}
           />
+          <div>
+            <Button variant="outline" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+              {uploading ? "Uploading…" : "Choose files"}
+            </Button>
+          </div>
           {uploads.length > 0 ? (
             <div className="flex flex-col gap-2">
               {uploads.map((upload) => (
@@ -445,9 +462,12 @@ export function ResearchEvidencePage() {
                             {file.type} · {file.claims.length} sections
                           </p>
                         </div>
-                        <Badge variant={file.status === "indexed" ? "default" : file.status === "failed" ? "destructive" : "secondary"}>
-                          {file.status}
-                        </Badge>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Badge variant={file.status === "indexed" ? "default" : file.status === "failed" ? "destructive" : "secondary"}>
+                            {file.status}
+                          </Badge>
+                          <DeleteFileButton kbId={file.kb_id} fileId={file.file_id} fileName={file.name} />
+                        </div>
                       </div>
                     ))}
                   </div>

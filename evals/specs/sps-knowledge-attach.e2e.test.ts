@@ -73,4 +73,19 @@ test("SPS knowledge attach: upload to KB, attach, gate sees union, detach drops"
       true,
     );
   });
+
+  await step("delete the file from its base", async () => {
+    await navigate(world.app.client, `${world.app.webUrl}/research/knowledge`);
+    await user.click({ role: "button", text: "Open" });
+    await user.see({ text: "SOP.txt" });
+    await user.click({ role: "button", text: "Delete" });
+    await user.click({ role: "button", text: "Confirm delete" });
+    await user.see({ text: "No files yet." });
+    await user.notSee({ text: "SOP.txt" });
+    evidence.recordAssertionEvidence(
+      "Files delete with confirmation",
+      "Deleting removes the file from its base after an explicit confirm step.",
+      true,
+    );
+  });
 });

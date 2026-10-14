@@ -2062,6 +2062,16 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
       const body = await requestJson<{ files: unknown }>(baseUrl, `/research/knowledge/${encodeURIComponent(kbId)}/files`, { token, timeoutMs: timeouts.listWorkspaces });
       return z.array(researchEvidenceFileSchema).parse(body.files);
     },
+    deleteKBFile: async (kbId: string, fileId: string): Promise<void> => {
+      const response = await fetch(`${baseUrl}/research/knowledge/${encodeURIComponent(kbId)}/files/${encodeURIComponent(fileId)}`, {
+        method: "DELETE",
+        headers: buildHeaders(token, hostToken),
+        signal: AbortSignal.timeout(timeouts.activateWorkspace),
+      });
+      if (!response.ok) {
+        throw new OpenworkServerError(response.status, "delete_failed", response.statusText, null);
+      }
+    },
     createKB: async (payload: { name: string; category: string; scope: string }): Promise<KnowledgeBase> => {
       const body = await requestJson<{ kb: unknown }>(baseUrl, "/research/knowledge", { token, method: "POST", body: payload, timeoutMs: timeouts.activateWorkspace });
       return knowledgeBaseSchema.parse(body.kb);

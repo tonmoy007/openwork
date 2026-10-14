@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBootState } from "@/react-app/shell/boot-state";
+import { ResearchBack } from "./page-shell";
 import { useResearchClient } from "./use-research-client";
 
 export function ResearchTemplatesPage() {
@@ -65,11 +66,14 @@ export function ResearchTemplatesPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl p-6">
-      <div className="mb-6">
+      <div className="mb-6 flex items-start gap-2">
+        <ResearchBack to="/research" label="projects" />
+        <div>
         <h1 className="text-xl font-semibold tracking-tight">Research templates</h1>
         <p className="text-sm text-muted-foreground">
           Versioned research programs. Clone one to make it yours.
         </p>
+        </div>
       </div>
       {entries.length === 0 ? (
         <Card>

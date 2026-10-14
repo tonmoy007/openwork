@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { projectCosts } from "@openwork/process-model/cost";
 import { useBootState } from "@/react-app/shell/boot-state";
 import { researchSimplifyRoute } from "./research-routes";
+import { ResearchBack } from "./page-shell";
 import { useResearchClient } from "./use-research-client";
 
 function formatMeasure(value: number, measure: string): string {
@@ -137,11 +138,14 @@ export function ResearchTobePage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl p-6">
-      <div className="mb-6">
+      <div className="mb-6 flex items-start gap-2">
+        <ResearchBack to={researchSimplifyRoute(projectId)} label="simplification" />
+        <div>
         <h1 className="text-xl font-semibold tracking-tight">To-be process</h1>
         <p className="text-sm text-muted-foreground">
           The simplified journey, built only from decided steps.
         </p>
+        </div>
       </div>
 
       {!variant ? (

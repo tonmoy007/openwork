@@ -49,17 +49,6 @@ import {
 } from "./control/control-provider";
 import { OpenworkContextPublisher } from "./openwork-context-publisher";
 import { SessionRoute } from "./session-route";
-import { ResearchEvidencePage } from "../domains/research/evidence-page";
-import { KnowledgeDetailPage } from "../domains/research/knowledge-detail-page";
-import { ResearchKnowledgePage } from "../domains/research/knowledge-page";
-import { ResearchSimplifyPage } from "../domains/research/simplify-page";
-import { ResearchTemplateEditorPage } from "../domains/research/template-editor-page";
-import { ResearchTemplatesPage } from "../domains/research/templates-page";
-import { ResearchTobePage } from "../domains/research/tobe-page";
-import { ResearchAsisPage } from "../domains/research/asis-page";
-import { ResearchNewProjectPage } from "../domains/research/new-project-page";
-import { ResearchPageShell } from "../domains/research/page-shell";
-import { ResearchPortfolioPage } from "../domains/research/portfolio-page";
 import { DesktopUpdaterProvider } from "../domains/settings/state/desktop-updater-provider";
 import { SettingsRoute } from "./settings-route";
 import { ShellConfigProvider } from "./shell-config";
@@ -526,16 +515,16 @@ export function AppRoot() {
                 }
               />
               <Route path="/calendar" element={<DevProfiler id="CalendarRoute"><SessionRoute /></DevProfiler>} />
-              <Route path="/research" element={<DevProfiler id="ResearchPortfolioRoute"><ResearchPageShell><ResearchPortfolioPage /></ResearchPageShell></DevProfiler>} />
-              <Route path="/research/new" element={<DevProfiler id="ResearchNewProjectRoute"><ResearchPageShell><ResearchNewProjectPage /></ResearchPageShell></DevProfiler>} />
-              <Route path="/research/:projectId/evidence" element={<DevProfiler id="ResearchEvidenceRoute"><ResearchPageShell><ResearchEvidencePage /></ResearchPageShell></DevProfiler>} />
-              <Route path="/research/:projectId/asis" element={<DevProfiler id="ResearchAsisRoute"><ResearchPageShell><ResearchAsisPage /></ResearchPageShell></DevProfiler>} />
-              <Route path="/research/:projectId/simplify" element={<DevProfiler id="ResearchSimplifyRoute"><ResearchPageShell><ResearchSimplifyPage /></ResearchPageShell></DevProfiler>} />
-              <Route path="/research/:projectId/tobe" element={<DevProfiler id="ResearchTobeRoute"><ResearchPageShell><ResearchTobePage /></ResearchPageShell></DevProfiler>} />
-              <Route path="/research/templates" element={<DevProfiler id="ResearchTemplatesRoute"><ResearchPageShell><ResearchTemplatesPage /></ResearchPageShell></DevProfiler>} />
-              <Route path="/research/templates/:templateId/edit" element={<DevProfiler id="ResearchTemplateEditorRoute"><ResearchPageShell><ResearchTemplateEditorPage /></ResearchPageShell></DevProfiler>} />
-              <Route path="/research/knowledge" element={<DevProfiler id="ResearchKnowledgeRoute"><ResearchPageShell><ResearchKnowledgePage /></ResearchPageShell></DevProfiler>} />
-              <Route path="/research/knowledge/:kbId" element={<DevProfiler id="ResearchKnowledgeDetailRoute"><ResearchPageShell><KnowledgeDetailPage /></ResearchPageShell></DevProfiler>} />
+              <Route path="/research" element={<DevProfiler id="ResearchPortfolioRoute"><SessionRoute /></DevProfiler>} />
+              <Route path="/research/new" element={<DevProfiler id="ResearchNewProjectRoute"><SessionRoute /></DevProfiler>} />
+              <Route path="/research/:projectId/evidence" element={<DevProfiler id="ResearchEvidenceRoute"><SessionRoute /></DevProfiler>} />
+              <Route path="/research/:projectId/asis" element={<DevProfiler id="ResearchAsisRoute"><SessionRoute /></DevProfiler>} />
+              <Route path="/research/:projectId/simplify" element={<DevProfiler id="ResearchSimplifyRoute"><SessionRoute /></DevProfiler>} />
+              <Route path="/research/:projectId/tobe" element={<DevProfiler id="ResearchTobeRoute"><SessionRoute /></DevProfiler>} />
+              <Route path="/research/templates" element={<DevProfiler id="ResearchTemplatesRoute"><SessionRoute /></DevProfiler>} />
+              <Route path="/research/templates/:templateId/edit" element={<DevProfiler id="ResearchTemplateEditorRoute"><SessionRoute /></DevProfiler>} />
+              <Route path="/research/knowledge" element={<DevProfiler id="ResearchKnowledgeRoute"><SessionRoute /></DevProfiler>} />
+              <Route path="/research/knowledge/:kbId" element={<DevProfiler id="ResearchKnowledgeDetailRoute"><SessionRoute /></DevProfiler>} />
               <Route path="/activity" element={<DevProfiler id="ActivityRoute"><SessionRoute /></DevProfiler>} />
               <Route path="/apps" element={<DevProfiler id="AppsRoute"><SessionRoute /></DevProfiler>} />
               <Route path="/dashboard/apps/:appId" element={<DevProfiler id="DashboardAppRoute"><SessionRoute /></DevProfiler>} />

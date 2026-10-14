@@ -110,6 +110,16 @@ import { ActivityPage } from "@/react-app/domains/activity/activity-page";
 import type { ActivityResource } from "@/react-app/kernel/activity-types";
 import { encodeConnectSkillToken } from "@/react-app/domains/session/surface/composer/connect-skill-token";
 import { AutomationsPage } from "@/react-app/domains/automations/automations-page";
+import { ResearchAsisPage } from "@/react-app/domains/research/asis-page";
+import { ResearchEvidencePage } from "@/react-app/domains/research/evidence-page";
+import { KnowledgeDetailPage } from "@/react-app/domains/research/knowledge-detail-page";
+import { ResearchKnowledgePage } from "@/react-app/domains/research/knowledge-page";
+import { ResearchNewProjectPage } from "@/react-app/domains/research/new-project-page";
+import { ResearchPortfolioPage } from "@/react-app/domains/research/portfolio-page";
+import { ResearchSimplifyPage } from "@/react-app/domains/research/simplify-page";
+import { ResearchTemplateEditorPage } from "@/react-app/domains/research/template-editor-page";
+import { ResearchTemplatesPage } from "@/react-app/domains/research/templates-page";
+import { ResearchTobePage } from "@/react-app/domains/research/tobe-page";
 import { automationProviderCatalog } from "@/react-app/domains/automations/automation-model-options";
 import { CalendarPage } from "@/react-app/domains/calendar/calendar-page";
 import { useCalendarFeature } from "@/react-app/domains/calendar/use-calendar-data";
@@ -432,6 +442,16 @@ export function SessionRoute() {
   const automationsRouteActive = automationsSurfaceAvailable && automationsRouteRequested;
   // Research is local-first: available on desktop without sign-in or Den.
   const researchRouteActive = researchRouteRequested;
+  const researchPortfolioActive = /^\/research(?:\/)?$/.test(location.pathname);
+  const researchNewActive = location.pathname === "/research/new";
+  const researchEvidenceActive = /^\/research\/[^/]+\/evidence(?:\/|$)/.test(location.pathname);
+  const researchAsisActive = /^\/research\/[^/]+\/asis(?:\/|$)/.test(location.pathname);
+  const researchSimplifyActive = /^\/research\/[^/]+\/simplify(?:\/|$)/.test(location.pathname);
+  const researchTobeActive = /^\/research\/[^/]+\/tobe(?:\/|$)/.test(location.pathname);
+  const researchTemplatesActive = location.pathname === "/research/templates";
+  const researchTemplateEditorActive = /^\/research\/templates\/[^/]+\/edit(?:\/|$)/.test(location.pathname);
+  const researchKnowledgeActive = location.pathname === "/research/knowledge";
+  const researchKnowledgeDetailActive = /^\/research\/knowledge\/[^/]+(?:\/|$)/.test(location.pathname);
   // The Calendar is an Automations view behind the automationCalendar feature.
   const calendarFeature = useCalendarFeature(useAutomationsDenContext());
   const calendarSurfaceAvailable = automationsEnabled && denAuth.isSignedIn && calendarFeature.data === true;
@@ -559,7 +579,7 @@ export function SessionRoute() {
   } = useWorkspaceRouteState({
     preservePendingConversationRoute: Boolean(requestedPendingId && pendingConversations[requestedPendingId]?.scope === sessionDraftScope),
     developerMode,
-    workspaceRoute: activityRouteActive ? "activity" : appsRouteActive ? "apps" : automationsRouteActive ? "automations" : calendarRouteActive || (calendarRouteRequested && calendarAvailabilityPending) ? "calendar" : dashboardWorkspaceRoute ? "dashboard" : "session",
+    workspaceRoute: activityRouteActive ? "activity" : appsRouteActive ? "apps" : automationsRouteActive ? "automations" : calendarRouteActive || (calendarRouteRequested && calendarAvailabilityPending) ? "calendar" : dashboardWorkspaceRoute ? "dashboard" : researchRouteActive ? "research" : "session",
     onServerSettingsChanged: () => undefined,
     onHostInfo: setOpenworkServerHostInfoState,
   });
@@ -3753,9 +3773,9 @@ export function SessionRoute() {
         />
       }
       // Page titles match their sidebar labels.
-      primaryTitle={activityRouteActive ? t("activity.title") : appsRouteActive ? "Dashboard" : automationsRouteActive ? "Automations" : calendarRouteActive ? "Calendar" : dashboardRouteActive ? "Dashboard" : undefined}
+      primaryTitle={activityRouteActive ? t("activity.title") : appsRouteActive ? "Dashboard" : automationsRouteActive ? "Automations" : calendarRouteActive ? "Calendar" : dashboardRouteActive ? "Dashboard" : researchRouteActive ? "Research" : undefined}
       // Dashboard, Automations and Library share one flat page surface.
-      primarySurface={activityRouteActive || dashboardRouteActive || automationsRouteActive || calendarRouteActive || extensionsMainOpen ? "flat" : undefined}
+      primarySurface={activityRouteActive || dashboardRouteActive || automationsRouteActive || calendarRouteActive || extensionsMainOpen || researchRouteActive ? "flat" : undefined}
       primarySlotIsConversation={!activityRouteActive && Boolean(pendingConversation)}
       primarySlot={activityRouteActive ? <ActivityPage onTrySkill={trySkillInNewSession} /> : pendingConversation ? <PendingConversationView conversation={pendingConversation} composer={newTaskComposerContext} /> : appsRouteActive ? (
         <WorkspaceProvider
@@ -3796,6 +3816,26 @@ export function SessionRoute() {
             onSignIn={() => handleOpenSettings("/settings/cloud-account")}
           />
         </WorkspaceProvider>
+      ) : researchPortfolioActive ? (
+        <ResearchPortfolioPage />
+      ) : researchNewActive ? (
+        <ResearchNewProjectPage />
+      ) : researchEvidenceActive ? (
+        <ResearchEvidencePage />
+      ) : researchAsisActive ? (
+        <ResearchAsisPage />
+      ) : researchSimplifyActive ? (
+        <ResearchSimplifyPage />
+      ) : researchTobeActive ? (
+        <ResearchTobePage />
+      ) : researchTemplatesActive ? (
+        <ResearchTemplatesPage />
+      ) : researchTemplateEditorActive ? (
+        <ResearchTemplateEditorPage />
+      ) : researchKnowledgeActive ? (
+        <ResearchKnowledgePage />
+      ) : researchKnowledgeDetailActive ? (
+        <KnowledgeDetailPage />
       ) : undefined}
       terminalOpen={terminalOpen}
       onTerminalOpenChange={setTerminalOpen}

@@ -482,3 +482,27 @@ test("knowledge bases attach, union, and detach without deleting", async () => {
     store.close()
   }
 })
+
+test("files delete individually without touching the base", async () => {
+  const store = await openStore(":memory:")
+  try {
+    const kb = store.createKB({ name: "KB", category: "service-evidence", scope: "global" })
+    store.saveEvidence({
+      file_id: "gone",
+      project_id: "",
+      name: "Gone.txt",
+      type: "sop",
+      size: 5,
+      status: "indexed",
+      claims: [],
+      kb_id: kb.id,
+    })
+    assert.equal(store.getKBFiles(kb.id).length, 1)
+    assert.equal(store.deleteFile("gone"), true)
+    assert.equal(store.deleteFile("gone"), false)
+    assert.deepEqual(store.getKBFiles(kb.id), [])
+    assert.equal(store.getKB(kb.id)?.name, "KB")
+  } finally {
+    store.close()
+  }
+})

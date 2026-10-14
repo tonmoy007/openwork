@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router";
 
@@ -12,7 +12,9 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useBootState } from "@/react-app/shell/boot-state";
+import { ResearchBack } from "./page-shell";
 import { useResearchClient } from "./use-research-client";
+import { DeleteFileButton } from "./delete-file-button";
 
 const EVIDENCE_TYPES = ["sop", "law", "form", "interview", "bpmn", "web"];
 
@@ -28,6 +30,7 @@ export function KnowledgeDetailPage() {
   const [urlText, setUrlText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const files = useQuery({
     queryKey: ["research", "kb-files", kbId],
@@ -109,11 +112,14 @@ export function KnowledgeDetailPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl p-6">
-      <div className="mb-6">
+      <div className="mb-6 flex items-start gap-2">
+        <ResearchBack to="/research/knowledge" label="knowledge bases" />
+        <div>
         <h1 className="text-xl font-semibold tracking-tight">Knowledge base files</h1>
         <p className="text-sm text-muted-foreground">
           {(files.data ?? []).length} files. Paste text, upload files, or capture from the web.
         </p>
+        </div>
       </div>
 
       <Card className="mb-4">
@@ -122,7 +128,24 @@ export function KnowledgeDetailPage() {
           <CardDescription>PDF, Word, BPMN, or text — up to 5 MB each.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Input type="file" multiple accept=".pdf,.docx,.bpmn,.xml,.txt,.md" onChange={(event) => void uploadFiles(event.target.files)} disabled={uploading} />
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.docx,.bpmn,.xml,.txt,.md"
+            className="hidden"
+            aria-label="Choose knowledge base files"
+            onChange={(event) => {
+              void uploadFiles(event.target.files);
+              event.target.value = "";
+            }}
+            disabled={uploading}
+          />
+          <div>
+            <Button variant="outline" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+              {uploading ? "Uploading…" : "Choose files"}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -197,9 +220,12 @@ export function KnowledgeDetailPage() {
                     {file.source_url ? ` · ${file.source_url}` : ""}
                   </p>
                 </div>
-                <Badge variant={file.status === "indexed" ? "default" : file.status === "failed" ? "destructive" : "secondary"}>
-                  {file.status}
-                </Badge>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Badge variant={file.status === "indexed" ? "default" : file.status === "failed" ? "destructive" : "secondary"}>
+                    {file.status}
+                  </Badge>
+                  <DeleteFileButton kbId={kbId} fileId={file.file_id} fileName={file.name} />
+                </div>
               </div>
             ))
           )}

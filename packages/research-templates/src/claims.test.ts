@@ -95,6 +95,7 @@ test("evidence gate opens only when all files are indexed with claims", () => {
     kb_id: null,
     source_url: null,
     retrieved_at: null,
+    source_base64: null,
   }))
   const open = evaluateEvidenceGate(ready)
   assert.equal(open.ready, true)
